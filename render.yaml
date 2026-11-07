@@ -1,0 +1,14 @@
+# Render blueprint: New > Blueprint, point it at this repository.
+services:
+  - type: web
+    name: bst-lobbying-game
+    runtime: node
+    plan: free            # use "starter" to avoid the ~1 minute wake-up after 15 idle minutes
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: HOST_PASSWORD
+        sync: false       # Render asks for the value; it is never stored in the repository
+      - key: NODE_VERSION
+        value: "20"

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lobbying Game · Team</title>
+<link rel="icon" href="logo-circle.png">
+<link rel="stylesheet" href="app.css">
+<style>
+  .picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; margin-top: 18px; }
+  .picker button { text-align: left; border: 0; font: inherit; }
+  .picker button:disabled { opacity: .45; cursor: not-allowed; }
+  .picker b { font-family: var(--hand); font-size: 30px; color: var(--green); display: block; line-height: 1.05; margin-bottom: 4px; }
+  .board { display: grid; gap: 12px; }
+  .board .note { padding: 12px 14px; }
+  .board .who { font-weight: 800; color: var(--green); }
+  .board .arg { font-style: italic; color: var(--ink); }
+  .offer { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px dashed var(--rule); }
+  .big { font-size: 26px; font-weight: 800; color: var(--green); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="bar"><span class="dot" title="Connection"></span><span class="team" id="teamName">Lobbying Game</span><span class="grow"></span><span class="pill" id="phase">…</span></div>
+<main class="wrap">
+
+  <section id="join" hidden>
+    <h1>Join the game</h1>
+    <p class="muted">Type the four-letter code shown on the screen.</p>
+    <form id="joinForm" class="row"><input class="code-in" id="codeIn" maxlength="4" autocomplete="off" autocapitalize="characters" aria-label="Game code"><button class="btn">Join</button></form>
+  </section>
+
+  <section id="pick" hidden>
+    <h1>Which group are you?</h1>
+    <p class="muted">One device per group. If your group already shows as taken, ask the instructor.</p>
+    <div class="picker" id="picker"></div>
+  </section>
+
+  <section id="main" hidden>
+    <div class="card note c2" id="phaseMsg" style="border:0"></div>
+    <div class="card" id="outcomeCard" hidden></div>
+
+    <div class="card" id="profileCard">
+      <h2>Your group</h2>
+      <p class="big" id="pName"></p>
+      <p id="pProfile"></p>
+      <p class="muted small">The WEEE Directive has been adopted. Your government must now decide how producers share the cost of collecting and recycling e-waste. You represent this producer. Decide which way of sharing the cost you will lobby for.</p>
+    </div>
+
+    <div class="card" id="allGroups" hidden><h2>All five groups</h2><div class="board" id="allList"></div></div>
+
+    <div class="card" id="numbersCard" hidden>
+      <h2>Your recycling bill under each option</h2>
+      <p class="muted small">Illustrative figures, € million per year. “Share of profit” compares the bill with your annual profit.</p>
+      <table><thead><tr><th>Option</th><th class="num">Your bill</th><th class="num">Share of profit</th></tr></thead><tbody id="numbersBody"></tbody></table>
+      <p class="muted small" id="feeNote"></p>
+    </div>
+
+    <div class="card" id="positionCard" hidden>
+      <h2 id="positionTitle">Your position</h2>
+      <div class="opts" id="opts"></div>
+      <label class="small muted" for="arg" style="display:block;margin-top:14px">Your argument to the regulator (one or two sentences)</label>
+      <textarea id="arg" maxlength="200" placeholder="Why should the regulator choose this option?"></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn" id="sendPos">Submit position</button><span class="small muted" id="posStatus"></span></div>
+    </div>
+
+    <div class="card" id="boardCard" hidden><h2>Where everyone stands</h2><div class="board" id="board"></div></div>
+
+    <div class="card" id="coalCard" hidden>
+      <h2>Coalitions</h2>
+      <p class="muted small">Offer another group a pact on one option. A pact counts only if both of you end on that option.</p>
+      <div class="row"><select id="coalTeam" aria-label="Group"></select><select id="coalRule" aria-label="Option"></select><button class="btn sm" id="coalSend">Offer pact</button></div>
+      <div id="offers" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card" id="pointsCard" hidden>
+      <h2>Lobbying effort</h2>
+      <p class="muted small">You have 100 points of lobbying effort. Put them behind the options you want the regulator to choose.</p>
+      <div class="alloc" id="alloc"></div>
+      <div class="row" style="margin-top:12px"><div class="meter grow"><i id="ptsMeter"></i></div><b id="ptsLeft">100 left</b></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="sendPts">Save points</button><span class="small muted" id="ptsStatus"></span></div>
+    </div>
+
+    <div class="card" id="finalCard" hidden>
+      <h2>Final position</h2>
+      <p class="muted small">This is what you will stand behind when the regulator decides.</p>
+      <div class="opts" id="finalOpts"></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="sendFinal">Confirm final position</button><span class="small muted" id="finalStatus"></span></div>
+    </div>
+
+  </section>
+</main>
+<script src="model.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  const { $, esc, mmss, toast, shock, PHASE_LABEL, store } = LG;
+  const qs = new URLSearchParams(location.search);
+  let room = (qs.get('room') || store.get('lg-room') || '').toUpperCase();
+  let rules = MODEL.RULES, S = null, conn = null;
+  const draft = { rule: null, argument: null, points: null, final: null, dirtyArg: false, dirtyPts: false };
+
+  function show(id) { ['join', 'pick', 'main'].forEach(s => $('#' + s).hidden = s !== id); }
+  if (!room) show('join');
+  $('#joinForm').onsubmit = e => { e.preventDefault(); room = $('#codeIn').value.trim().toUpperCase(); if (room.length !== 4) return toast('The code has four letters.'); store.set('lg-room', room); history.replaceState(null, '', '?room=' + room); start(); };
+  if (room) start();
+
+  function start() {
+    if (conn) return;
+    conn = LG.connect(() => ({ role: 'team', room }), {
+      welcome: m => { rules = m.rules; },
+      state: m => { S = m.state; store.set('lg-room', room); render(); },
+      error: m => { toast(m.msg); if (/No game/.test(m.msg)) { store.set('lg-room', ''); show('join'); } }
+    });
+  }
+  const send = m => conn.send(m);
+  const enabled = () => rules.filter(r => S.rulesEnabled.includes(r.id));
+  const group = id => S.params.groups.find(g => g.id === +id);
+
+  function optButtons(container, selected, onPick) {
+    container.innerHTML = enabled().map(r => `<button type="button" class="opt" data-r="${r.id}" aria-pressed="${r.id === selected}"><span class="k">${r.id}</span><div><b>${esc(r.name)}</b><span>${esc(r.how)}</span></div></button>`).join('');
+    container.querySelectorAll('.opt').forEach(b => b.onclick = () => { onPick(b.dataset.r); container.querySelectorAll('.opt').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+  }
+
+  function render() {
+    shock(S.shock);
+    $('#phase').textContent = PHASE_LABEL[S.phase] || S.phase;
+    if (!S.you) {
+      show('pick');
+      $('#picker').innerHTML = S.params.groups.map((g, i) => `<button class="note c${i + 1}" data-id="${g.id}" ${S.teams[g.id].claimed ? 'disabled' : ''}><b>Group ${g.id}: ${esc(g.name)}</b><span class="small">${esc(g.profile)}</span>${S.teams[g.id].claimed ? '<p class="small muted" style="margin-top:6px">Taken</p>' : ''}</button>`).join('');
+      $('#picker').querySelectorAll('button').forEach(b => b.onclick = () => send({ t: 'claim', team: +b.dataset.id }));
+      return;
+    }
+    show('main');
+    const me = S.teams[S.you], g = group(S.you), P = S.phase;
+    $('#teamName').textContent = `Group ${g.id}: ${g.name}`;
+    $('#pName').textContent = `Group ${g.id}: ${g.name}`; $('#pProfile').textContent = g.profile;
+
+    const msgs = {
+      lobby: 'You’re in. Wait for the instructor to start the briefing.',
+      brief: 'Read your group’s profile and the others. Where would you want the costs to fall?',
+      position: 'Choose the option you will lobby for and write your argument. Earlier positions shape the debate.',
+      negotiate: 'All positions are now public. Talk to the other groups, offer pacts, and place your 100 points of lobbying effort.',
+      final: 'Last call: confirm your final position and your points.',
+      decide: 'The regulator is weighing the arguments. Wait for the decision.',
+      reveal: 'The regulator has decided. See what it means for you.'
+    };
+    $('#phaseMsg').innerHTML = `<p class="hand" style="font-size:28px;margin:0">${esc(PHASE_LABEL[P])}</p><p style="margin:4px 0 0">${esc(msgs[P] || '')}</p>`;
+
+    // all groups (from briefing on)
+    $('#allGroups').hidden = !['brief', 'position'].includes(P);
+    $('#allList').innerHTML = S.params.groups.map((x, i) => `<div class="note c${i + 1}"><span class="who">Group ${x.id}: ${esc(x.name)}</span> <span class="small">${esc(x.profile)}</span></div>`).join('');
+
+    // numbers
+    const M = MODEL.compute(S.params), i = S.you - 1;
+    $('#numbersCard').hidden = !S.numbersVisible || P === 'lobby';
+    if (S.numbersVisible) {
+      const rows = enabled().map(r => ({ r, c: M.cost[r.id][i], s: M.share[r.id][i] }));
+      const best = rows.reduce((a, b) => (b.s < a.s ? b : a), rows[0]);
+      $('#numbersBody').innerHTML = rows.map(x => `<tr class="${x === best ? 'best' : ''}"><td>${x.r.id} · ${esc(x.r.short)}</td><td class="num">${MODEL.fmtM(x.c)}</td><td class="num">${MODEL.fmtPct(x.s)}</td></tr>`).join('');
+      $('#feeNote').textContent = S.rulesEnabled.includes('E') ? `Under the consumer fee, buyers pay about €${M.fee.toFixed(2)} on every new product; your bill is the profit lost to lower sales.` : '';
+    }
+
+    // position
+    const canPos = ['position', 'negotiate'].includes(P);
+    $('#positionCard').hidden = !canPos;
+    if (canPos) {
+      if (!draft.dirtyArg) { draft.rule = draft.rule || (me.position && me.position.rule); if (me.position && $('#arg') !== document.activeElement) $('#arg').value = me.position.argument || ''; }
+      if (!$('#opts').dataset.k || $('#opts').dataset.k !== S.rulesEnabled.join()) { $('#opts').dataset.k = S.rulesEnabled.join(); optButtons($('#opts'), draft.rule, r => { draft.rule = r; draft.dirtyArg = true; }); }
+      $('#positionTitle').textContent = P === 'negotiate' ? 'Your position (you can still change it)' : 'Your position';
+      $('#posStatus').textContent = me.position ? `Submitted at ${mmss(me.position.at)} · ${me.position.rule}` : 'Not submitted yet';
+      $('#sendPos').textContent = me.position ? 'Update position' : 'Submit position';
+    }
+
+    // board
+    const pub = ['negotiate', 'final', 'decide', 'reveal'].includes(P);
+    $('#boardCard').hidden = !pub;
+    if (pub) $('#board').innerHTML = S.params.groups.map((x, k) => { const t = S.teams[x.id], pos = t.position; const fr = t.final && t.final.rule;
+      return `<div class="note c${k + 1}"><span class="who">Group ${x.id}: ${esc(x.name)}${x.id === S.you ? ' (you)' : ''}</span><br>${pos && pos.rule ? `<b>${pos.rule} · ${esc(LG.ruleName(rules, pos.rule))}</b>${fr && fr !== pos.rule ? ` <span class="pill orange">final: ${fr}</span>` : ''}<br><span class="arg">${esc(pos.argument || '')}</span>` : '<span class="muted">No position yet</span>'}</div>`; }).join('');
+
+    // coalitions
+    $('#coalCard').hidden = P !== 'negotiate' && P !== 'final';
+    if (!$('#coalCard').hidden) {
+      const others = S.params.groups.filter(x => x.id !== S.you);
+      if ($('#coalTeam').options.length !== others.length) $('#coalTeam').innerHTML = others.map(x => `<option value="${x.id}">Group ${x.id}: ${esc(x.name)}</option>`).join('');
+      const ek = S.rulesEnabled.join(); if ($('#coalRule').dataset.k !== ek) { $('#coalRule').dataset.k = ek; $('#coalRule').innerHTML = enabled().map(r => `<option value="${r.id}">${r.id} · ${esc(r.short)}</option>`).join(''); }
+      $('#coalSend').disabled = P !== 'negotiate';
+      const name = id => `Group ${id}: ${group(id).name}`;
+      $('#offers').innerHTML = S.proposals.filter(p => p.from === S.you || p.to === S.you).map(p => {
+        const other = p.from === S.you ? p.to : p.from;
+        if (p.status === 'pending' && p.to === S.you) return `<div class="offer"><span><b>${esc(name(other))}</b> offers a pact on <b>${p.rule}</b></span><button class="btn sm" data-a="${p.id}">Accept</button><button class="btn sm ghost" data-d="${p.id}">Decline</button></div>`;
+        if (p.status === 'pending') return `<div class="offer muted">You offered ${esc(name(other))} a pact on ${p.rule}. Waiting…</div>`;
+        if (p.status === 'accepted') return `<div class="offer">✔ Pact with <b>${esc(name(other))}</b> on <b>${p.rule}</b></div>`;
+        return `<div class="offer muted">${esc(name(other))} declined a pact on ${p.rule}.</div>`;
+      }).join('') || '<p class="muted small">No offers yet.</p>';
+      $('#offers').querySelectorAll('[data-a]').forEach(b => b.onclick = () => send({ t: 'respond', id: b.dataset.a, accept: true }));
+      $('#offers').querySelectorAll('[data-d]').forEach(b => b.onclick = () => send({ t: 'respond', id: b.dataset.d, accept: false }));
+    }
+
+    // points
+    const canPts = ['negotiate', 'final'].includes(P);
+    $('#pointsCard').hidden = !canPts;
+    if (canPts) {
+      if (!draft.dirtyPts) draft.points = Object.assign({}, me.points || {});
+      const ek = S.rulesEnabled.join();
+      if ($('#alloc').dataset.k !== ek) { $('#alloc').dataset.k = ek; $('#alloc').innerHTML = enabled().map(r => `<span>${r.id} · ${esc(r.short)}</span><span class="stepper"><button type="button" data-r="${r.id}" data-d="-10" aria-label="Minus 10 on ${r.id}">−</button><b id="pv${r.id}">0</b><button type="button" data-r="${r.id}" data-d="10" aria-label="Plus 10 on ${r.id}">+</button></span>`).join('');
+        $('#alloc').querySelectorAll('button').forEach(b => b.onclick = () => { const r = b.dataset.r, d = +b.dataset.d, used = Object.values(draft.points).reduce((a, x) => a + x, 0); const cur = draft.points[r] || 0; const nv = Math.max(0, Math.min(cur + d, cur + (100 - used))); draft.points[r] = nv; draft.dirtyPts = true; paintPts(); }); }
+      paintPts();
+      $('#ptsStatus').textContent = draft.dirtyPts ? 'Not saved yet' : (Object.keys(me.points || {}).length ? 'Saved' : '');
+    }
+
+    // final
+    $('#finalCard').hidden = P !== 'final';
+    if (P === 'final') {
+      draft.final = draft.final || (me.final && me.final.rule) || (me.position && me.position.rule);
+      if ($('#finalOpts').dataset.k !== S.rulesEnabled.join()) { $('#finalOpts').dataset.k = S.rulesEnabled.join(); optButtons($('#finalOpts'), draft.final, r => draft.final = r); }
+      $('#finalStatus').textContent = me.final ? `Confirmed: ${me.final.rule}` : 'Not confirmed yet';
+    }
+
+    // outcome
+    $('#outcomeCard').hidden = P !== 'reveal' || !S.decision;
+    if (P === 'reveal' && S.decision) {
+      const r = S.decision.rule, mine = M.cost[r][i], share = M.share[r][i];
+      const bestR = S.rulesEnabled.reduce((a, b) => (M.share[b][i] < M.share[a][i] ? b : a), S.rulesEnabled[0]);
+      const sub = M.subsidy[r][i];
+      $('#outcomeCard').innerHTML = `<h2>The regulator chose ${r}: ${esc(LG.ruleName(rules, r))}</h2>
+        <p class="big">Your bill: ${MODEL.fmtM(mine)} a year, ${MODEL.fmtPct(share)} of your profit</p>
+        <p>Your best option would have been <b>${bestR} · ${esc(LG.ruleName(rules, bestR))}</b>: ${MODEL.fmtM(M.cost[bestR][i])} (${MODEL.fmtPct(M.share[bestR][i])} of profit).</p>
+        ${r !== 'E' ? `<p>${sub > 0.05 ? `You pay ${MODEL.fmtM(sub)} more than the cost of recycling your own returns: you are paying for other producers’ waste.` : sub < -0.05 ? `You pay ${MODEL.fmtM(-sub)} less than the cost of recycling your own returns: other producers are paying for your waste.` : 'You pay about what your own returns cost to recycle.'}</p>` : '<p>Consumers pay the recycling fee; your cost is the profit lost to lower sales.</p>'}`;
+    }
+  }
+
+  function paintPts() {
+    const used = Object.values(draft.points || {}).reduce((a, x) => a + x, 0);
+    enabled().forEach(r => { const el = $('#pv' + r.id); if (el) el.textContent = (draft.points[r.id] || 0); });
+    $('#ptsLeft').textContent = `${100 - used} left`; $('#ptsMeter').style.width = used + '%';
+  }
+
+  $('#arg').addEventListener('input', () => { draft.dirtyArg = true; });
+  $('#sendPos').onclick = () => { if (!draft.rule) return toast('Choose an option first.'); send({ t: 'position', rule: draft.rule, argument: $('#arg').value }); draft.dirtyArg = false; toast('Position sent.'); };
+  $('#coalSend').onclick = () => send({ t: 'propose', to: +$('#coalTeam').value, rule: $('#coalRule').value });
+  $('#sendPts').onclick = () => { send({ t: 'points', points: draft.points }); draft.dirtyPts = false; toast('Points saved.'); };
+  $('#sendFinal').onclick = () => { if (!draft.final) return toast('Choose an option first.'); send({ t: 'final', rule: draft.final }); toast('Final position confirmed.'); };
+})();
+</script>
+</body>
+</html>

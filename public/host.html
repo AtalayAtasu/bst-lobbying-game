@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lobbying Game · Instructor</title>
+<link rel="icon" href="logo-circle.png">
+<link rel="stylesheet" href="app.css">
+<style>
+  .wrap { max-width: 1280px; }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; }
+  .steps button { border: 2px solid var(--rule); background: #fff; padding: 6px 12px; border-radius: 18px; font-weight: 700; font-size: 14px; }
+  .steps button.on { background: var(--green); color: #fff; border-color: var(--ink); }
+  .grid2 { display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; }
+  @media (max-width: 960px) { .grid2 { grid-template-columns: 1fr; } }
+  .tal { display: grid; grid-template-columns: 30px 1fr 64px 92px; gap: 8px; align-items: center; margin: 6px 0; }
+  .tal .barbg { height: 18px; background: var(--mist); border-radius: 4px; overflow: hidden; }
+  .tal .barbg i { display: block; height: 100%; background: var(--orange); }
+  .tal.chosen { font-weight: 800; }
+  .tal.chosen .barbg i { background: var(--green); }
+  td .arg { font-style: italic; font-size: 14px; }
+  .edit { background: var(--mist); padding: 10px; border-radius: 8px; margin-top: 6px; }
+  .edit input[type=number] { width: 64px; padding: 4px 6px; }
+  .param input { width: 80px; padding: 4px 6px; }
+  details > summary { cursor: pointer; font-weight: 700; color: var(--green); }
+  .links code { background: var(--mist); padding: 2px 6px; border-radius: 6px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="bar"><span class="dot"></span><b class="team">Lobbying Game · Instructor</b><span class="grow"></span><span class="pill" id="roomPill">No room</span></div>
+<main class="wrap">
+  <section id="login" hidden class="card" style="max-width:460px">
+    <h2>Instructor sign-in</h2>
+    <form id="loginForm" class="row" style="margin-top:10px"><input type="password" id="pw" placeholder="Password" autocomplete="current-password" aria-label="Password"><button class="btn">Sign in</button></form>
+  </section>
+
+  <section id="rooms" hidden class="card" style="max-width:640px">
+    <h2>Games</h2>
+    <p class="muted small">Start a new game for each class. A game keeps its state if you reload this page.</p>
+    <div id="roomList" style="margin:10px 0"></div>
+    <button class="btn" id="newRoom">Start a new game</button>
+  </section>
+
+  <section id="console" hidden>
+    <div class="card">
+      <div class="row"><h1 id="codeBig">—</h1><span class="grow"></span>
+        <span class="links small">Teams: <code id="playUrl"></code> · Projector: <a id="screenLink" target="_blank" rel="noopener">open screen</a></span></div>
+      <div class="steps" id="steps" style="margin-top:14px"></div>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <div class="card">
+          <h2>Groups</h2>
+          <table><thead><tr><th>Group</th><th>Position (first → now)</th><th>Final</th><th>Points</th><th></th></tr></thead><tbody id="teamRows"></tbody></table>
+        </div>
+        <div class="card">
+          <h2>Timeline</h2>
+          <div id="timeline" class="small" style="max-height:260px;overflow:auto"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h2>Lobbying tally</h2>
+          <p class="muted small">Points × coalition bonus (+25% per partner on the same final option) × credibility (×0.8 if a group changed its option since its first position). This informs your decision; you decide.</p>
+          <div id="tally"></div>
+          <div class="row" style="margin-top:10px"><label class="row small"><input type="checkbox" id="showTally"> Show tally on the projector</label></div>
+        </div>
+        <div class="card">
+          <h2>Decide</h2>
+          <p class="muted small">Pick the option the regulator adopts, then move to “Outcome”.</p>
+          <div class="row" id="decideBtns"></div>
+          <p class="small" id="decided"></p>
+        </div>
+        <div class="card stack">
+          <h2>Controls</h2>
+          <label class="row"><input type="checkbox" id="numbers"> Show each group its own numbers</label>
+          <div><b class="small">Options on the table</b><div class="row small" id="ruleChecks"></div></div>
+          <div><b class="small">Breaking news</b>
+            <select id="shockPreset" style="width:100%;margin:6px 0"></select>
+            <textarea id="shockText" maxlength="240" placeholder="Or write your own news"></textarea>
+            <div class="row" style="margin-top:6px"><button class="btn sm orange" id="sendShock">Send to all screens</button><button class="btn sm ghost" id="clearShock">Clear</button></div>
+          </div>
+          <div class="row"><button class="btn sm ghost" id="export">Download results (JSON)</button><button class="btn sm red" id="reset">Reset this game</button></div>
+        </div>
+        <div class="card">
+          <details><summary>Cost model parameters</summary>
+            <p class="muted small">Illustrative figures behind the numbers. Money in € million; units in millions.</p>
+            <div id="paramForm" class="param"></div>
+            <button class="btn sm" id="saveParams" style="margin-top:8px">Apply</button>
+          </details>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="model.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  const { $, esc, mmss, toast, store, PHASE_LABEL } = LG;
+  let token = store.sget('lg-host'), room = new URLSearchParams(location.search).get('room') || store.sget('lg-host-room') || '';
+  let S = null, rules = MODEL.RULES, conn = null, wantCreate = false, resetArmed = false;
+  const show = id => ['login', 'rooms', 'console'].forEach(s => $('#' + s).hidden = s !== id);
+
+  conn = LG.connect(() => (token && room) ? { role: 'host', token, room } : { t: 'noop' }, {
+    host_ok: m => { token = m.token; store.sset('lg-host', token); listRooms(); },
+    host_needed: () => { token = null; show('login'); },
+    rooms: m => { show('rooms'); $('#roomList').innerHTML = m.rooms.length ? m.rooms.sort((a, b) => b.createdAt - a.createdAt).map(r => `<div class="row" style="padding:6px 0;border-bottom:1px dashed var(--rule)"><b>${r.code}</b><span class="muted small">${new Date(r.createdAt).toLocaleString()} · ${esc(PHASE_LABEL[r.phase])} · ${r.teams} groups joined</span><span class="grow"></span><button class="btn sm" data-code="${r.code}">Open</button></div>`).join('') : '<p class="muted">No games yet.</p>';
+      $('#roomList').querySelectorAll('[data-code]').forEach(b => b.onclick = () => openRoom(b.dataset.code)); },
+    welcome: m => { room = m.room; wantCreate = false; store.sset('lg-host-room', room); rules = m.rules; history.replaceState(null, '', '?room=' + room); show('console'); },
+    state: m => { S = m.state; render(); },
+    error: m => { toast(m.msg); if (/No such room/.test(m.msg)) { room = ''; listRooms(); } },
+    room_deleted: () => { room = ''; listRooms(); }
+  });
+  const send = m => conn.send(Object.assign({ token }, m));
+  function listRooms() { if (!token) return show('login'); conn.send({ t: 'list_rooms', token }); }
+  function openRoom(code) { room = code; conn.send({ t: 'hello', role: 'host', token, room }); }
+  if (!token) show('login'); else if (!room) setTimeout(listRooms, 300);
+
+  $('#loginForm').onsubmit = e => { e.preventDefault(); conn.send({ t: 'host_login', password: $('#pw').value }); };
+  $('#newRoom').onclick = () => { wantCreate = true; conn.send({ t: 'hello', role: 'host', token, create: true }); };
+
+  function render() {
+    const base = location.origin;
+    $('#roomPill').textContent = 'Game ' + S.code; $('#codeBig').textContent = S.code;
+    $('#playUrl').textContent = `${base}/play?room=${S.code}`; $('#screenLink').href = `${base}/screen?room=${S.code}`;
+    $('#steps').innerHTML = S.phases.map((p, i) => `<button class="${p === S.phase ? 'on' : ''}" data-p="${p}">${i + 1}. ${esc(PHASE_LABEL[p])}</button>`).join('');
+    $('#steps').querySelectorAll('button').forEach(b => b.onclick = () => send({ t: 'phase', phase: b.dataset.p }));
+    const M = MODEL.compute(S.params);
+
+    // groups
+    $('#teamRows').innerHTML = S.params.groups.map(g => {
+      const t = S.teams[g.id], fp = t.firstPosition, p = t.position, f = t.final;
+      const pacts = S.proposals.filter(x => x.status === 'accepted' && (x.from === g.id || x.to === g.id)).map(x => `${x.from === g.id ? x.to : x.from}:${x.rule}`).join(', ');
+      const pts = t.points ? Object.entries(t.points).map(([r, v]) => `${r}${v}`).join(' ') : '';
+      return `<tr><td><b>${g.id}. ${esc(g.name)}</b><br><span class="small ${t.claimed ? '' : 'muted'}">${t.claimed ? 'device joined' : 'not joined'}</span></td>
+        <td>${fp ? `${fp.rule} <span class="muted small">(${mmss(fp.at)})</span>` : '—'}${p && fp && p.rule !== fp.rule ? ` → <b>${p.rule}</b>` : ''}${p && p.argument ? `<div class="arg">${esc(p.argument)}</div>` : ''}${pacts ? `<div class="small">Pacts: ${esc(pacts)}</div>` : ''}</td>
+        <td>${f ? `<b>${f.rule}</b>` : '—'}</td><td class="small">${esc(pts) || '—'}</td>
+        <td><button class="btn sm ghost" data-edit="${g.id}">Edit</button>${t.claimed ? ` <button class="btn sm ghost" data-rel="${g.id}">Release</button>` : ''}</td></tr>
+        <tr hidden id="edit${g.id}"><td colspan="5"><div class="edit row small">
+          Position <select data-f="rule">${rules.map(r => `<option ${p && p.rule === r.id ? 'selected' : ''}>${r.id}</option>`).join('')}</select>
+          Final <select data-f="final"><option value="">—</option>${rules.map(r => `<option ${f && f.rule === r.id ? 'selected' : ''}>${r.id}</option>`).join('')}</select>
+          Points ${rules.map(r => `${r.id}<input type="number" min="0" max="100" data-pt="${r.id}" value="${(t.points && t.points[r.id]) || 0}">`).join(' ')}
+          Pact with <select data-f="pw"><option value="">—</option>${S.params.groups.filter(x => x.id !== g.id).map(x => `<option value="${x.id}">${x.id}</option>`).join('')}</select> on <select data-f="pr">${rules.map(r => `<option>${r.id}</option>`).join('')}</select>
+          <button class="btn sm" data-save="${g.id}">Save</button></div></td></tr>`;
+    }).join('');
+    $('#teamRows').querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const r = $('#edit' + b.dataset.edit); r.hidden = !r.hidden; });
+    $('#teamRows').querySelectorAll('[data-rel]').forEach(b => b.onclick = () => send({ t: 'release_team', team: +b.dataset.rel }));
+    $('#teamRows').querySelectorAll('[data-save]').forEach(b => b.onclick = () => {
+      const row = $('#edit' + b.dataset.save), v = f => row.querySelector(`[data-f="${f}"]`).value;
+      const points = {}; row.querySelectorAll('[data-pt]').forEach(i => points[i.dataset.pt] = +i.value || 0);
+      const patch = { rule: v('rule'), points }; if (v('final')) patch.final = v('final'); if (v('pw')) patch.pact = { with: +v('pw'), rule: v('pr') };
+      send({ t: 'set_team', team: +b.dataset.save, patch });
+    });
+
+    // tally
+    const T = S.tally || {}, max = Math.max(1, ...Object.values(T).map(x => x.score));
+    $('#tally').innerHTML = rules.filter(r => S.rulesEnabled.includes(r.id)).map(r => `<div class="tal ${S.decision && S.decision.rule === r.id ? 'chosen' : ''}"><b>${r.id}</b><div class="barbg"><i style="width:${(T[r.id] ? T[r.id].score : 0) / max * 100}%"></i></div><span class="num">${T[r.id] ? T[r.id].score : 0}</span><span class="small muted">${esc(r.short)}</span></div>`).join('');
+    $('#showTally').checked = !!S.showTally;
+    $('#decideBtns').innerHTML = rules.filter(r => S.rulesEnabled.includes(r.id)).map(r => `<button class="btn sm ${S.decision && S.decision.rule === r.id ? '' : 'ghost'}" data-d="${r.id}" title="${esc(r.name)}">${r.id} · ${esc(r.short)}</button>`).join('');
+    $('#decideBtns').querySelectorAll('[data-d]').forEach(b => b.onclick = () => send({ t: 'decide', rule: b.dataset.d }));
+    $('#decided').textContent = S.decision ? `Decision recorded: ${S.decision.rule}. ${S.phase === 'reveal' ? 'Shown on all screens.' : 'Move to “Outcome” to reveal it.'}` : 'No decision yet.';
+
+    // controls
+    $('#numbers').checked = !!S.numbersVisible;
+    $('#ruleChecks').innerHTML = rules.map(r => `<label class="row" title="${esc(r.name)}"><input type="checkbox" data-rc="${r.id}" ${S.rulesEnabled.includes(r.id) ? 'checked' : ''}>${r.id}</label>`).join('');
+    $('#ruleChecks').querySelectorAll('input').forEach(i => i.onchange = () => send({ t: 'rules', enabled: [...$('#ruleChecks').querySelectorAll('input:checked')].map(x => x.dataset.rc) }));
+    if (!$('#shockPreset').options.length) $('#shockPreset').innerHTML = '<option value="">Choose a prepared news item…</option>' + S.shockPresets.map(s => `<option>${esc(s)}</option>`).join('');
+
+    // timeline
+    const L = S.log || [], nm = id => id ? `G${id}` : '';
+    const words = { join: 'joined', position: 'position', propose: 'offered pact', pact: 'accepted pact', decline: 'declined pact', final: 'final', phase: 'phase →', shock: 'news:', decision: 'decision:', numbersVisible: 'numbers shown:', showTally: 'tally on screen:', host_edit: 'edited by instructor' };
+    $('#timeline').innerHTML = L.slice().reverse().map(e => `<div>${mmss(e.at)} · ${nm(e.team)} ${esc(words[e.type] || e.type)} ${esc(e.detail || '')}</div>`).join('');
+
+    // params
+    if (!$('#paramForm').dataset.done) {
+      $('#paramForm').dataset.done = 1;
+      const P = S.params, f = (k, v, step) => `<input type="number" step="${step || 'any'}" data-k="${k}" value="${v}">`;
+      $('#paramForm').innerHTML = `<div class="row small">Handling €/unit ${f('handlingPerUnit', P.handlingPerUnit)} Cost €/kg ${f('costPerKg', P.costPerKg)} Demand elasticity ${f('demandElasticity', P.demandElasticity)}</div>
+        <table class="small"><thead><tr><th>Group</th><th>Units sold (m)</th><th>Price €</th><th>Margin</th><th>Units returned (m)</th><th>Weight kg</th><th>Toxicity ×</th></tr></thead><tbody>
+        ${P.groups.map((g, i) => `<tr data-g="${i}"><td>${esc(g.name)}</td>${['unitsSold', 'price', 'margin', 'unitsReturned', 'weightKg', 'toxicity'].map(k => `<td>${f(k, g[k])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    }
+  }
+
+  $('#showTally').onchange = e => send({ t: 'toggle', key: 'showTally', value: e.target.checked });
+  $('#numbers').onchange = e => send({ t: 'toggle', key: 'numbersVisible', value: e.target.checked });
+  $('#shockPreset').onchange = e => { if (e.target.value) $('#shockText').value = e.target.value; };
+  $('#sendShock').onclick = () => send({ t: 'shock', text: $('#shockText').value });
+  $('#clearShock').onclick = () => send({ t: 'clear_shock' });
+  $('#reset').onclick = () => { if (!resetArmed) { resetArmed = true; $('#reset').textContent = 'Click again to reset'; setTimeout(() => { resetArmed = false; $('#reset').textContent = 'Reset this game'; }, 4000); return; } resetArmed = false; send({ t: 'reset' }); $('#reset').textContent = 'Reset this game'; };
+  $('#export').onclick = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), model: MODEL.compute(S.params), state: S }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `lobbying-game-${S.code}.json`; a.click(); };
+  $('#saveParams').onclick = () => {
+    const P = JSON.parse(JSON.stringify(S.params)), root = $('#paramForm');
+    ['handlingPerUnit', 'costPerKg', 'demandElasticity'].forEach(k => P[k] = +root.querySelector(`[data-k="${k}"]`).value);
+    root.querySelectorAll('tr[data-g]').forEach(tr => { const g = P.groups[+tr.dataset.g]; tr.querySelectorAll('[data-k]').forEach(i => g[i.dataset.k] = +i.value); });
+    send({ t: 'params', params: P }); toast('Parameters applied.');
+  };
+})();
+</script>
+</body>
+</html>

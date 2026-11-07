@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lobbying Game · Screen</title>
+<link rel="icon" href="logo-circle.png">
+<link rel="stylesheet" href="app.css">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { display: grid; place-items: center; }
+  #stage { position: relative; width: 1600px; height: 900px; transform-origin: center; flex: none; }
+  .ttl { position: absolute; left: 70px; top: 44px; font-size: 52px; font-weight: 750; color: var(--green); }
+  .sub { position: absolute; left: 72px; top: 112px; font-size: 24px; color: var(--muted); }
+  .corner { position: absolute; right: 60px; top: 46px; text-align: right; font-size: 20px; color: var(--muted); }
+  .corner b { font-size: 34px; color: var(--green); letter-spacing: .12em; }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.on { display: block; }
+  /* lobby */
+  .join-code { position: absolute; left: 70px; top: 230px; font-size: 26px; }
+  .join-code b { display: block; font-size: 190px; letter-spacing: .12em; color: var(--green); line-height: 1; margin: 10px 0 20px; }
+  .join-url { font-size: 28px; }
+  #qr { position: absolute; right: 120px; top: 200px; width: 430px; height: 430px; background: #fff; padding: 18px; box-shadow: 0 10px 22px -12px rgba(16,48,42,.5); }
+  #qr svg, #qr img { width: 100%; height: 100%; }
+  .chips { position: absolute; left: 70px; right: 70px; bottom: 70px; display: flex; gap: 16px; }
+  .chips .note { flex: 1; font-size: 20px; padding: 12px 16px; opacity: .35; }
+  .chips .note.in { opacity: 1; }
+  .chips .note b { font-family: var(--hand); font-size: 30px; color: var(--green); display: block; }
+  /* brief */
+  .groups { position: absolute; left: 70px; right: 70px; top: 190px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; }
+  .groups .note { font-size: 19px; min-height: 230px; }
+  .groups .note b { font-family: var(--hand); font-size: 32px; color: var(--green); display: block; line-height: 1.05; margin-bottom: 6px; }
+  .optlist { position: absolute; left: 70px; right: 70px; top: 500px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; }
+  .optlist div { border: 2px solid var(--rule); border-radius: 12px; padding: 12px 14px; background: #fff; font-size: 16px; color: var(--muted); }
+  .optlist b { display: block; color: var(--ink); font-size: 19px; margin-bottom: 4px; }
+  .optlist i { font-style: normal; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--green); color: #fff; font-weight: 800; margin-right: 6px; }
+  /* board (positions by option) */
+  .cols { position: absolute; left: 50px; right: 50px; top: 180px; bottom: 60px; display: grid; gap: 14px; }
+  .col { border-left: 3px dashed var(--rule); padding: 0 8px 0 14px; display: flex; flex-direction: column; gap: 14px; position: relative; }
+  .col h3 { font-size: 22px; color: var(--ink); margin-bottom: 4px; min-height: 56px; }
+  .col h3 i { font-style: normal; display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--green); color: #fff; margin-right: 6px; }
+  .col .note { font-size: 16px; padding: 10px 12px; }
+  .col .note b { font-family: var(--hand); font-size: 27px; color: var(--green); display: block; line-height: 1; }
+  .col .note .arg { font-style: italic; }
+  .col .tally { margin-top: auto; height: 16px; background: var(--mist); border-radius: 4px; overflow: hidden; }
+  .col .tally i { display: block; height: 100%; background: var(--orange); }
+  .col .score { font-size: 18px; font-weight: 800; color: #9A4A08; }
+  .pending { position: absolute; left: 70px; right: 70px; top: 200px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; }
+  .pending .note { min-height: 280px; font-size: 20px; }
+  .pending .note b { font-family: var(--hand); font-size: 32px; color: var(--green); display: block; }
+  .tick { font-size: 90px; color: var(--leaf); font-family: var(--hand); line-height: 1; }
+  #pacts { position: absolute; inset: 0; pointer-events: none; }
+  .deciding { position: absolute; right: 60px; top: 106px; font-family: var(--hand); font-size: 40px; color: var(--orange); font-weight: 700; margin: 0; }
+  .col .note .pact { display: block; margin-top: 6px; font-family: var(--hand); font-size: 22px; font-weight: 700; color: #B85A0B; }
+  /* reveal */
+  .tabs { position: absolute; right: 60px; bottom: 24px; display: flex; gap: 8px; }
+  .tabs button { border: 2px solid var(--rule); background: #fff; border-radius: 16px; padding: 4px 14px; font-weight: 700; color: var(--muted); }
+  .tabs button.on { background: var(--green); color: #fff; border-color: var(--ink); }
+  .panel { position: absolute; left: 0; top: 160px; width: 1600px; height: 690px; display: none; }
+  .panel.on { display: block; }
+  .panel svg { width: 100%; height: 100%; overflow: visible; }
+  svg text { font-family: var(--font); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <span class="dot" style="position:absolute;left:14px;top:14px"></span>
+  <h1 class="ttl" id="ttl">Group Exercise: How to implement the WEEE?</h1>
+  <p class="sub" id="sub"></p>
+  <div class="corner" id="corner"></div>
+
+  <div class="view" id="v-lobby">
+    <p class="join-code">Join at <span class="join-url" id="joinUrl"></span><b id="joinCode">····</b>One device per group.</p>
+    <div id="qr" aria-label="QR code to join"></div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="view" id="v-brief"><div class="groups" id="groups"></div><div class="optlist" id="optlist"></div></div>
+  <div class="view" id="v-position"><div class="pending" id="pending"></div></div>
+  <div class="view" id="v-board"><div class="cols" id="cols"></div><svg id="pacts"></svg><p class="deciding" id="deciding" hidden>The regulator is deciding…</p></div>
+
+  <div class="view" id="v-reveal">
+    <div class="panel" id="p-bill"><svg viewBox="0 0 1600 690" id="svg-bill"></svg></div>
+    <div class="panel" id="p-subsidy"><svg viewBox="0 0 1600 690" id="svg-subsidy"></svg></div>
+    <div class="panel" id="p-map"><svg viewBox="0 0 1600 690" id="svg-map"></svg></div>
+    <div class="panel" id="p-time"><svg viewBox="0 0 1600 690" id="svg-time"></svg></div>
+    <div class="tabs" id="tabs"></div>
+  </div>
+</div>
+<script src="vendor/rough.js"></script>
+<script src="vendor/qrcode.js"></script>
+<script src="model.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  const { $, esc, mmss, shock, PHASE_LABEL } = LG;
+  const room = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
+  let S = null, rules = MODEL.RULES, tab = 0, lastRevealKey = '';
+  const NOTE = ['#E1F1E9', '#FFF1C9', '#E3F2F1', '#FFE6D2', '#EDE7F6'];
+  const C = { ink: '#10302A', green: '#00684B', leaf: '#019F6E', orange: '#F38B32', red: '#E0352B', blue: '#2F5FD0', grey: '#9AA9A3', muted: '#5E746D' };
+
+  function fit() { const s = Math.min(innerWidth / 1600, innerHeight / 900); $('#stage').style.transform = `scale(${s})`; }
+  addEventListener('resize', fit); fit();
+  if (!room) { $('#ttl').textContent = 'Add ?room=CODE to this page’s address'; return; }
+
+  LG.connect(() => ({ role: 'screen', room }), { welcome: m => rules = m.rules, state: m => { S = m.state; render(); }, error: m => { $('#sub').textContent = m.msg; } });
+
+  const group = id => S.params.groups.find(g => g.id === +id);
+  const enabled = () => rules.filter(r => S.rulesEnabled.includes(r.id));
+  function view(id) { document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + id)); }
+
+  function render() {
+    shock(S.shock);
+    const P = S.phase;
+    $('#corner').innerHTML = `${esc(PHASE_LABEL[P])}<br><b>${S.code}</b>`;
+    $('#sub').textContent = '';
+    if (P === 'lobby') {
+      view('lobby'); $('#ttl').textContent = 'The Lobbying Game';
+      const url = `${location.origin}/play?room=${S.code}`;
+      $('#joinUrl').textContent = url.replace(/^https?:\/\//, ''); $('#joinCode').textContent = S.code;
+      if ($('#qr').dataset.u !== url) { $('#qr').dataset.u = url; const q = qrcode(0, 'M'); q.addData(url); q.make(); $('#qr').innerHTML = q.createSvgTag({ cellSize: 8, margin: 0, scalable: true }); }
+      $('#chips').innerHTML = S.params.groups.map((g, i) => `<div class="note ${S.teams[g.id].claimed ? 'in' : ''}" style="background:${NOTE[i]}"><b>Group ${g.id}</b>${esc(g.name)}${S.teams[g.id].claimed ? ' ✓' : ''}</div>`).join('');
+      return;
+    }
+    if (P === 'brief') {
+      view('brief'); $('#ttl').textContent = 'Group Exercise: How to implement the WEEE?';
+      $('#groups').innerHTML = S.params.groups.map((g, i) => `<div class="note" style="background:${NOTE[i]};transform:rotate(${[-1.2, .8, -.6, 1, -.9][i]}deg)"><b>Group ${g.id}: ${esc(g.name)}</b>${esc(g.profile)}</div>`).join('');
+      $('#optlist').innerHTML = enabled().map(r => `<div><b><i>${r.id}</i>${esc(r.name)}</b>${esc(r.how)}</div>`).join('');
+      return;
+    }
+    if (P === 'position') {
+      view('position'); $('#ttl').textContent = 'Groups are taking positions';
+      $('#sub').textContent = 'Positions stay hidden until everyone has written theirs.';
+      $('#pending').innerHTML = S.params.groups.map((g, i) => { const t = S.teams[g.id]; return `<div class="note" style="background:${NOTE[i]}"><b>Group ${g.id}: ${esc(g.name)}</b>${t.position ? `<div class="tick">✓</div><span class="muted">in at ${mmss(t.position.at)}</span>` : '<span class="muted">thinking…</span>'}</div>`; }).join('');
+      return;
+    }
+    if (['negotiate', 'final', 'decide'].includes(P)) { view('board'); board(); return; }
+    if (P === 'reveal') { view('reveal'); reveal(); }
+  }
+
+  /* ----- board: groups placed under the option they stand behind; pacts drawn between them ----- */
+  function board() {
+    const P = S.phase, R = enabled();
+    $('#ttl').textContent = P === 'negotiate' ? 'Where everyone stands' : P === 'final' ? 'Final round' : 'Final positions';
+    $('#sub').textContent = P === 'negotiate' ? 'Talk, offer pacts, place your lobbying effort.' : P === 'final' ? 'Confirm your final position and points.' : '';
+    $('#deciding').hidden = P !== 'decide';
+    $('#cols').style.gridTemplateColumns = `repeat(${R.length}, 1fr)`;
+    const at = id => { const t = S.teams[id]; return (P === 'decide' && t.final && t.final.rule) || (t.position && t.position.rule) || null; };
+    const T = S.tally, max = T ? Math.max(1, ...R.map(r => T[r.id].score)) : 1;
+    $('#cols').innerHTML = R.map(r => `<div class="col" data-r="${r.id}"><h3><i>${r.id}</i>${esc(r.short)}</h3>${S.params.groups.filter(g => at(g.id) === r.id).map(g => { const t = S.teams[g.id]; return `<div class="note" data-g="${g.id}" style="background:${NOTE[g.id - 1]}"><b>Group ${g.id}: ${esc(g.name)}</b><span class="arg">${esc(t.position && t.position.argument)}</span>${S.proposals.filter(p => p.status === 'accepted' && (p.from === g.id || p.to === g.id)).map(p => `<span class="pact">pact with ${p.from === g.id ? p.to : p.from} on ${p.rule}</span>`).join('')}</div>`; }).join('')}
+      ${T ? `<span class="score">${T[r.id].score}</span><div class="tally"><i style="width:${T[r.id].score / max * 100}%"></i></div>` : ''}</div>`).join('');
+    // pacts
+    requestAnimationFrame(() => {
+      const svg = $('#pacts'); svg.innerHTML = ''; svg.setAttribute('viewBox', '0 0 1600 900');
+      const rc = rough.svg(svg), stage = $('#stage').getBoundingClientRect(), sc = stage.width / 1600;
+      const box = id => { const el = $(`#cols .note[data-g="${id}"]`); if (!el) return null; const b = el.getBoundingClientRect(); return { x: (b.left - stage.left) / sc + b.width / sc / 2, y: (b.top - stage.top) / sc + b.height / sc / 2 }; };
+      S.proposals.filter(p => p.status === 'accepted').forEach((p, i) => {
+        const a = box(p.from), b = box(p.to); if (!a || !b || Math.abs(a.x - b.x) < 5) return; // same column: shown as chips
+        const mid = [(a.x + b.x) / 2 + (a.x === b.x ? 120 : 0), (a.y + b.y) / 2 - 40];
+        svg.appendChild(rc.curve([[a.x, a.y], mid, [b.x, b.y]], { stroke: C.orange, strokeWidth: 3, roughness: 1.4, strokeLineDash: [10, 8], seed: 3 + i }));
+      });
+    });
+  }
+
+  /* ----- reveal panels ----- */
+  const TABS = [['bill', 'Who pays what'], ['subsidy', 'Whose waste'], ['map', 'Volume and value'], ['time', 'How it unfolded']];
+  function reveal() {
+    const r = S.decision && S.decision.rule;
+    $('#ttl').textContent = r ? `The regulator chose ${r}: ${LG.ruleName(rules, r)}` : 'Waiting for the decision';
+    $('#tabs').innerHTML = TABS.map((t, i) => `<button class="${i === tab ? 'on' : ''}" data-i="${i}">${t[1]}</button>`).join('');
+    $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { tab = +b.dataset.i; reveal(); });
+    TABS.forEach((t, i) => $('#p-' + t[0]).classList.toggle('on', i === tab));
+    if (!r) return;
+    const key = JSON.stringify([r, tab, S.params, S.rulesEnabled, S.log && S.log.length]);
+    if (key === lastRevealKey) return; lastRevealKey = key;
+    const M = MODEL.compute(S.params);
+    [drawBill, drawSubsidy, drawMap, drawTime][tab](M, r);
+  }
+  addEventListener('keydown', e => { if (S && S.phase === 'reveal' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { tab = (tab + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length; reveal(); } });
+
+  function txt(svg, x, y, s, o = {}) { const t = document.createElementNS('http://www.w3.org/2000/svg', 'text'); t.setAttribute('x', x); t.setAttribute('y', y); t.setAttribute('text-anchor', o.a || 'middle'); t.setAttribute('font-size', o.size || 20); t.setAttribute('fill', o.fill || C.ink); if (o.w) t.setAttribute('font-weight', o.w); if (o.hand) { t.setAttribute('font-family', 'Caveat'); } t.textContent = s; svg.appendChild(t); return t; }
+
+  // 1. each group's bill under the decision, as a share of profit, against the option that suited it best
+  function drawBill(M, r) {
+    const svg = $('#svg-bill'); svg.innerHTML = ''; const rc = rough.svg(svg);
+    const G = S.params.groups, L = 260, Rr = 1500, W = (Rr - L) / G.length;
+    const vals = G.map((g, i) => M.share[r][i]), bests = G.map((g, i) => Math.min(...S.rulesEnabled.map(x => M.share[x][i])));
+    const vmax = Math.max(1, ...vals, ...bests) * 1.1, Y = v => 560 - Math.sqrt(Math.max(0, v) / vmax) * 480; // square-root scale so small and very large bills both read
+    svg.appendChild(rc.line(L - 20, 560, Rr, 560, { stroke: C.ink, strokeWidth: 2.4 }));
+    [0, .05, .25, 1, 2, 5, 10].filter(v => v <= vmax).forEach(v => { txt(svg, L - 30, Y(v) + 7, MODEL.fmtPct(v), { a: 'end', size: 18, fill: C.muted }); svg.appendChild(rc.line(L - 20, Y(v), Rr, Y(v), { stroke: '#E3ECE7', strokeWidth: 1, roughness: .3 })); });
+    txt(svg, 70, 66, 'square-root scale', { a: 'start', size: 16, fill: C.muted });
+    txt(svg, 70, 40, 'Recycling bill under the decision, as a share of profit', { a: 'start', size: 22, w: 700 });
+    G.forEach((g, i) => {
+      const x = L + i * W + W * .2, w = W * .6, v = vals[i];
+      svg.appendChild(rc.rectangle(x, Y(v), w, 560 - Y(v), { fill: C.green, fillStyle: 'hachure', hachureGap: 8, stroke: C.ink, strokeWidth: 2, seed: i + 1 }));
+      txt(svg, x + w / 2, Y(v) - 14, MODEL.fmtPct(v), { size: 26, w: 800, fill: C.green });
+      txt(svg, x + w / 2, Y(v) - 44, MODEL.fmtM(M.cost[r][i]), { size: 18, fill: C.muted });
+      svg.appendChild(rc.line(x - 10, Y(bests[i]), x + w + 10, Y(bests[i]), { stroke: C.orange, strokeWidth: 4, seed: 20 + i }));
+      txt(svg, x + w / 2, 596, `Group ${g.id}`, { size: 20, w: 700 }); txt(svg, x + w / 2, 622, g.name, { size: 20 });
+      const fr = (S.teams[g.id].final && S.teams[g.id].final.rule) || (S.teams[g.id].position && S.teams[g.id].position.rule);
+      txt(svg, x + w / 2, 652, fr ? `lobbied for ${fr}` : 'no position', { size: 26, hand: true, fill: fr === r ? C.leaf : C.orange });
+    });
+    txt(svg, 1500, 40, '— best available option for that group', { a: 'end', size: 28, hand: true, fill: C.orange });
+  }
+
+  // 2. pays for others' waste (+) or has its waste paid by others (−), relative to recycling its own returns
+  function drawSubsidy(M, r) {
+    const svg = $('#svg-subsidy'); svg.innerHTML = ''; const rc = rough.svg(svg);
+    const G = S.params.groups, X0 = 800, vals = G.map((g, i) => M.subsidy[r][i]), vmax = Math.max(1, ...vals.map(Math.abs)) * 1.15, X = v => X0 + v / vmax * 560;
+    svg.appendChild(rc.line(X0, 40, X0, 620, { stroke: C.ink, strokeWidth: 2.4 }));
+    txt(svg, X0 - 20, 30, '← others pay for your waste', { a: 'end', size: 30, hand: true, fill: C.blue });
+    txt(svg, X0 + 20, 30, 'you pay for others’ waste →', { a: 'start', size: 30, hand: true, fill: C.red });
+    if (r === 'E') { txt(svg, 800, 340, 'Consumers pay a fee on every new product; no producer pays for another’s waste.', { size: 30 }); txt(svg, 800, 384, `Fee: about €${M.fee.toFixed(2)} per product`, { size: 26, fill: C.muted }); return; }
+    G.forEach((g, i) => {
+      const y = 80 + i * 110, v = vals[i], x1 = Math.min(X(v), X0), w = Math.max(2, Math.abs(X(v) - X0));
+      svg.appendChild(rc.rectangle(x1, y, w, 64, { fill: v >= 0 ? C.red : C.blue, fillStyle: 'hachure', hachureGap: 8, stroke: C.ink, strokeWidth: 2, seed: 30 + i }));
+      txt(svg, v >= 0 ? X0 - 20 : X0 + 20, y + 40, `Group ${g.id}: ${g.name}`, { a: v >= 0 ? 'end' : 'start', size: 22, w: 700 });
+      txt(svg, v >= 0 ? X(v) + 14 : X(v) - 14, y + 42, (v >= 0 ? '+' : '−') + MODEL.fmtM(Math.abs(v)), { a: v >= 0 ? 'start' : 'end', size: 22, fill: C.muted });
+    });
+    txt(svg, 800, 660, 'Bill under the chosen option minus the cost of recycling your own returned products (€ million a year)', { size: 20, fill: C.muted });
+  }
+
+  // 3. the handout's volume–value picture: weight coming back vs value sold (log scales)
+  function drawMap(M, r) {
+    const svg = $('#svg-map'); svg.innerHTML = ''; const rc = rough.svg(svg);
+    const G = S.params.groups, L = 220, Rr = 1400, T = 30, B = 580;
+    const xs = M.soldValue, ys = M.returnedWeight;
+    const lx = v => Math.log10(Math.max(v, 1e-3)), xmin = Math.min(...xs.map(lx)) - .3, xmax = Math.max(...xs.map(lx)) + .3, ymin = Math.min(...ys.map(lx)) - .3, ymax = Math.max(...ys.map(lx)) + .3;
+    const X = v => L + (lx(v) - xmin) / (xmax - xmin) * (Rr - L), Y = v => B - (lx(v) - ymin) / (ymax - ymin) * (B - T);
+    svg.appendChild(rc.line(L, B, Rr + 20, B, { stroke: C.ink, strokeWidth: 2.4 })); svg.appendChild(rc.line(L, B, L, T - 20, { stroke: C.ink, strokeWidth: 2.4 }));
+    txt(svg, (L + Rr) / 2, B + 50, 'Value sold today (€ million, log scale)', { size: 22 });
+    const yl = txt(svg, L - 40, (T + B) / 2, 'Weight coming back as waste (thousand tonnes, log scale)', { size: 22 }); yl.setAttribute('transform', `rotate(-90 ${L - 40} ${(T + B) / 2})`);
+    G.forEach((g, i) => {
+      const cx = X(xs[i]), cy = Y(ys[i]), d = 30 + 50 * Math.sqrt(M.profit[i] / Math.max(...M.profit));
+      svg.appendChild(rc.circle(cx, cy, d, { fill: C.green, fillStyle: 'solid', stroke: C.ink, seed: 50 + i }));
+      txt(svg, cx + d / 2 + 12, cy - 4, `Group ${g.id}: ${g.name}`, { a: 'start', size: 22, w: 700 });
+      txt(svg, cx + d / 2 + 12, cy + 24, `bill under ${r}: ${MODEL.fmtPct(M.share[r][i])} of profit`, { a: 'start', size: 19, fill: C.muted });
+    });
+    txt(svg, 1500, 640, 'Circle size: annual profit', { a: 'end', size: 26, hand: true, fill: C.orange });
+  }
+
+  // 4. timeline of positions, pacts, news and the decision
+  function drawTime(M, r) {
+    const svg = $('#svg-time'); svg.innerHTML = ''; const rc = rough.svg(svg);
+    const L0 = S.log || [], evs = L0.filter(e => ['position', 'pact', 'final', 'shock', 'decision', 'phase'].includes(e.type));
+    const tmax = Math.max(60000, ...evs.map(e => e.at)), L = 330, Rr = 1520, X = t => L + t / tmax * (Rr - L);
+    const lane = id => 60 + (id - 1) * 95;
+    S.params.groups.forEach(g => { txt(svg, L - 20, lane(g.id) + 7, `Group ${g.id}: ${g.name}`, { a: 'end', size: 18, w: 700 }); svg.appendChild(rc.line(L, lane(g.id), Rr, lane(g.id), { stroke: '#DCE6E1', strokeWidth: 1.4, roughness: .4 })); });
+    svg.appendChild(rc.line(L, 560, Rr, 560, { stroke: C.ink, strokeWidth: 2 }));
+    evs.filter(e => e.type === 'phase').forEach(e => { svg.appendChild(rc.line(X(e.at), 30, X(e.at), 560, { stroke: C.grey, strokeWidth: 1.2, strokeLineDash: [6, 8], roughness: .3 })); txt(svg, X(e.at) + 6, 586, PHASE_LABEL[e.detail] || e.detail, { a: 'start', size: 16, fill: C.muted }); });
+    evs.forEach(e => {
+      if (e.type === 'position' || e.type === 'final') { const y = lane(e.team); svg.appendChild(rc.circle(X(e.at), y, e.type === 'final' ? 34 : 26, { fill: e.type === 'final' ? C.green : '#fff', fillStyle: 'solid', stroke: C.green, strokeWidth: 2, seed: Math.round(e.at) % 97 })); txt(svg, X(e.at), y + 6, e.detail, { size: 16, w: 800, fill: e.type === 'final' ? '#fff' : C.green }); }
+      if (e.type === 'pact') { const [other, rule] = (e.detail || '').split(':'); svg.appendChild(rc.line(X(e.at), lane(e.team), X(e.at), lane(+other), { stroke: C.orange, strokeWidth: 3, seed: 7 })); txt(svg, X(e.at) + 8, (lane(e.team) + lane(+other)) / 2, `pact ${rule}`, { a: 'start', size: 24, hand: true, fill: C.orange }); }
+      if (e.type === 'shock') { svg.appendChild(rc.line(X(e.at), 20, X(e.at), 560, { stroke: C.red, strokeWidth: 2.5, seed: 9 })); txt(svg, X(e.at) + 6, 20, 'news', { a: 'start', size: 24, hand: true, fill: C.red }); }
+      if (e.type === 'decision') { txt(svg, X(e.at), 620, `decision: ${e.detail}`, { size: 28, hand: true, fill: C.green }); }
+    });
+    txt(svg, Rr, 650, '○ position   ● final position   minutes since start', { a: 'end', size: 18, fill: C.muted });
+  }
+})();
+</script>
+</body>
+</html>

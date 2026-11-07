@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>The Lobbying Game</title>
+<link rel="icon" href="logo-circle.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main class="wrap">
+  <p class="hand" style="font-size:30px;margin:30px 0 0">Business Sustainability Thinking</p>
+  <h1 style="font-size:48px">The Lobbying Game</h1>
+  <p class="muted" style="font-size:20px">How to implement the WEEE? Five producers, one regulator, one set of rules for who pays to recycle e-waste.</p>
+  <div class="card stack">
+    <h2>Join your group</h2>
+    <form class="row" onsubmit="event.preventDefault();location.href='play?room='+encodeURIComponent(this.c.value.trim().toUpperCase())">
+      <input name="c" class="code-in" maxlength="4" autocomplete="off" autocapitalize="characters" aria-label="Game code" placeholder="CODE"><button class="btn">Join</button>
+    </form>
+  </div>
+  <p class="small muted">Instructor: <a href="host">console</a></p>
+</main>
+</body>
+</html>
