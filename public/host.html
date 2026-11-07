@@ -25,6 +25,9 @@
   .param input { width: 80px; padding: 4px 6px; }
   details > summary { cursor: pointer; font-weight: 700; color: var(--green); }
   .links code { background: var(--mist); padding: 2px 6px; border-radius: 6px; }
+  .stars { white-space: nowrap; }
+  .star { border: 1.5px solid var(--rule); background: #fff; border-radius: 8px; padding: 1px 5px; font-size: 12px; color: var(--orange); margin-right: 2px; }
+  .star.on { background: var(--orange); color: #fff; border-color: var(--ink); }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -54,7 +57,7 @@
       <div>
         <div class="card">
           <h2>Groups</h2>
-          <table><thead><tr><th>Group</th><th>Position (first → now)</th><th>Final</th><th>Points</th><th></th></tr></thead><tbody id="teamRows"></tbody></table>
+          <table><thead><tr><th>Group</th><th>Position (first → now)</th><th>Final</th><th>Effort</th><th>Argument</th><th></th></tr></thead><tbody id="teamRows"></tbody></table>
         </div>
         <div class="card">
           <h2>Timeline</h2>
@@ -64,7 +67,7 @@
       <div>
         <div class="card">
           <h2>Lobbying tally</h2>
-          <p class="muted small">Points × coalition bonus (+25% per partner on the same final option) × credibility (×0.8 if a group changed its option since its first position). This informs your decision; you decide.</p>
+          <p class="muted small">Each commitment: points × timing (×1.5 position, ×1.0 negotiate, ×0.6 final) × coalition bonus (+25% per pact partner on the same final option) × credibility (×0.8 if a group's final option differs from its first position) × your argument rating (0–3★: ×0.85 / ×0.95 / ×1.05 / ×1.15; unrated ×1). Each option's total is then multiplied by the public mood that news has created. This informs your decision; you decide.</p>
           <div id="tally"></div>
           <div class="row" style="margin-top:10px"><label class="row small"><input type="checkbox" id="showTally"> Show tally on the projector</label></div>
         </div>
@@ -81,7 +84,13 @@
           <div><b class="small">Breaking news</b>
             <select id="shockPreset" style="width:100%;margin:6px 0"></select>
             <textarea id="shockText" maxlength="240" placeholder="Or write your own news"></textarea>
-            <div class="row" style="margin-top:6px"><button class="btn sm orange" id="sendShock">Send to all screens</button><button class="btn sm ghost" id="clearShock">Clear</button></div>
+            <div class="row" style="margin-top:6px"><button class="btn sm orange" id="sendShock">Send to all screens</button><button class="btn sm ghost" id="clearShock">Hide banner</button></div>
+            <p class="small" style="margin:8px 0 0">Public mood: <span id="moodNow">neutral</span> <button class="btn sm ghost" id="clearMood">Reset mood</button></p>
+            <p class="muted small" style="margin:0">Prepared news shifts how receptive the regulator is to some options (shown as ↑/↓); your own text changes nothing.</p>
+          </div>
+          <div><b class="small">Epilogue: five years later</b>
+            <div class="row small" style="margin-top:6px">Producer that leaves the market <select id="epiExit"><option value="">— off —</option></select></div>
+            <p class="muted small" style="margin:4px 0 0">Adds a “Five years later” chart to the outcome: who ends up paying for the waste of a producer that has gone.</p>
           </div>
           <div class="row"><button class="btn sm ghost" id="export">Download results (JSON)</button><button class="btn sm red" id="reset">Reset this game</button></div>
         </div>
@@ -135,12 +144,13 @@
     $('#teamRows').innerHTML = S.params.groups.map(g => {
       const t = S.teams[g.id], fp = t.firstPosition, p = t.position, f = t.final;
       const pacts = S.proposals.filter(x => x.status === 'accepted' && (x.from === g.id || x.to === g.id)).map(x => `${x.from === g.id ? x.to : x.from}:${x.rule}`).join(', ');
-      const pts = t.points ? Object.entries(t.points).map(([r, v]) => `${r}${v}`).join(' ') : '';
+      const pts = (t.commits || []).map(c => `${c.pts}→${c.rule}×${c.mult}`).join(' ') + (t.study ? ' · study' : '');
+      const stars = [0, 1, 2, 3].map(n => `<button class="star ${t.stars === n ? 'on' : ''}" data-rate="${g.id}" data-n="${n}" title="${['Weak', 'Plausible', 'Convincing', 'Compelling'][n]}">${n ? '★'.repeat(n) : '0'}</button>`).join('');
       return `<tr><td><b>${g.id}. ${esc(g.name)}</b><br><span class="small ${t.claimed ? '' : 'muted'}">${t.claimed ? 'device joined' : 'not joined'}</span></td>
         <td>${fp ? `${fp.rule} <span class="muted small">(${mmss(fp.at)})</span>` : '—'}${p && fp && p.rule !== fp.rule ? ` → <b>${p.rule}</b>` : ''}${p && p.argument ? `<div class="arg">${esc(p.argument)}</div>` : ''}${pacts ? `<div class="small">Pacts: ${esc(pacts)}</div>` : ''}</td>
-        <td>${f ? `<b>${f.rule}</b>` : '—'}</td><td class="small">${esc(pts) || '—'}</td>
+        <td>${f ? `<b>${f.rule}</b>` : '—'}</td><td class="small">${esc(pts) || '—'}</td><td class="stars">${stars}</td>
         <td><button class="btn sm ghost" data-edit="${g.id}">Edit</button>${t.claimed ? ` <button class="btn sm ghost" data-rel="${g.id}">Release</button>` : ''}</td></tr>
-        <tr hidden id="edit${g.id}"><td colspan="5"><div class="edit row small">
+        <tr hidden id="edit${g.id}"><td colspan="6"><div class="edit row small">
           Position <select data-f="rule">${rules.map(r => `<option ${p && p.rule === r.id ? 'selected' : ''}>${r.id}</option>`).join('')}</select>
           Final <select data-f="final"><option value="">—</option>${rules.map(r => `<option ${f && f.rule === r.id ? 'selected' : ''}>${r.id}</option>`).join('')}</select>
           Points ${rules.map(r => `${r.id}<input type="number" min="0" max="100" data-pt="${r.id}" value="${(t.points && t.points[r.id]) || 0}">`).join(' ')}
@@ -148,6 +158,7 @@
           <button class="btn sm" data-save="${g.id}">Save</button></div></td></tr>`;
     }).join('');
     $('#teamRows').querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const r = $('#edit' + b.dataset.edit); r.hidden = !r.hidden; });
+    $('#teamRows').querySelectorAll('[data-rate]').forEach(b => b.onclick = () => { const t = S.teams[b.dataset.rate], n = +b.dataset.n; send({ t: 'rate', team: +b.dataset.rate, stars: t.stars === n ? null : n }); });
     $('#teamRows').querySelectorAll('[data-rel]').forEach(b => b.onclick = () => send({ t: 'release_team', team: +b.dataset.rel }));
     $('#teamRows').querySelectorAll('[data-save]').forEach(b => b.onclick = () => {
       const row = $('#edit' + b.dataset.save), v = f => row.querySelector(`[data-f="${f}"]`).value;
@@ -158,7 +169,7 @@
 
     // tally
     const T = S.tally || {}, max = Math.max(1, ...Object.values(T).map(x => x.score));
-    $('#tally').innerHTML = rules.filter(r => S.rulesEnabled.includes(r.id)).map(r => `<div class="tal ${S.decision && S.decision.rule === r.id ? 'chosen' : ''}"><b>${r.id}</b><div class="barbg"><i style="width:${(T[r.id] ? T[r.id].score : 0) / max * 100}%"></i></div><span class="num">${T[r.id] ? T[r.id].score : 0}</span><span class="small muted">${esc(r.short)}</span></div>`).join('');
+    $('#tally').innerHTML = rules.filter(r => S.rulesEnabled.includes(r.id)).map(r => `<div class="tal ${S.decision && S.decision.rule === r.id ? 'chosen' : ''}"><b>${r.id}</b><div class="barbg"><i style="width:${(T[r.id] ? T[r.id].score : 0) / max * 100}%"></i></div><span class="num">${T[r.id] ? T[r.id].score : 0}</span><span class="small muted">${esc(r.short)}${S.mood[r.id] && S.mood[r.id] !== 1 ? ` · mood ×${S.mood[r.id]}` : ''}</span></div>`).join('');
     $('#showTally').checked = !!S.showTally;
     $('#decideBtns').innerHTML = rules.filter(r => S.rulesEnabled.includes(r.id)).map(r => `<button class="btn sm ${S.decision && S.decision.rule === r.id ? '' : 'ghost'}" data-d="${r.id}" title="${esc(r.name)}">${r.id} · ${esc(r.short)}</button>`).join('');
     $('#decideBtns').querySelectorAll('[data-d]').forEach(b => b.onclick = () => send({ t: 'decide', rule: b.dataset.d }));
@@ -168,11 +179,15 @@
     $('#numbers').checked = !!S.numbersVisible;
     $('#ruleChecks').innerHTML = rules.map(r => `<label class="row" title="${esc(r.name)}"><input type="checkbox" data-rc="${r.id}" ${S.rulesEnabled.includes(r.id) ? 'checked' : ''}>${r.id}</label>`).join('');
     $('#ruleChecks').querySelectorAll('input').forEach(i => i.onchange = () => send({ t: 'rules', enabled: [...$('#ruleChecks').querySelectorAll('input:checked')].map(x => x.dataset.rc) }));
-    if (!$('#shockPreset').options.length) $('#shockPreset').innerHTML = '<option value="">Choose a prepared news item…</option>' + S.shockPresets.map(s => `<option>${esc(s)}</option>`).join('');
+    if (!$('#shockPreset').options.length) $('#shockPreset').innerHTML = '<option value="">Choose a prepared news item…</option>' + S.shockPresets.map(s => `<option value="${esc(s.text)}">${esc(s.text)} [${Object.entries(s.effects).map(([r, m]) => r + (m > 1 ? '↑' : '↓')).join(' ')}]</option>`).join('');
 
+    const mood = Object.entries(S.mood || {}).filter(([, m]) => m !== 1);
+    $('#moodNow').textContent = mood.length ? mood.map(([r, m]) => `${r} ×${m}`).join(', ') : 'neutral';
+    if ($('#epiExit').options.length === 1) $('#epiExit').innerHTML += S.params.groups.map(g => `<option value="${g.id}">${g.id}. ${esc(g.name)}</option>`).join('');
+    $('#epiExit').value = S.epilogue ? String(S.epilogue.exit) : '';
     // timeline
     const L = S.log || [], nm = id => id ? `G${id}` : '';
-    const words = { join: 'joined', position: 'position', propose: 'offered pact', pact: 'accepted pact', decline: 'declined pact', final: 'final', phase: 'phase →', shock: 'news:', decision: 'decision:', numbersVisible: 'numbers shown:', showTally: 'tally on screen:', host_edit: 'edited by instructor' };
+    const words = { join: 'joined', position: 'position', propose: 'offered pact', pact: 'accepted pact', decline: 'declined pact', final: 'final', phase: 'phase →', shock: 'news:', decision: 'decision:', numbersVisible: 'numbers shown:', showTally: 'tally on screen:', host_edit: 'edited by instructor', commit: 'committed', study: 'commissioned a cost study', rated: 'argument rated', mood_reset: 'mood reset' };
     $('#timeline').innerHTML = L.slice().reverse().map(e => `<div>${mmss(e.at)} · ${nm(e.team)} ${esc(words[e.type] || e.type)} ${esc(e.detail || '')}</div>`).join('');
 
     // params
@@ -190,6 +205,8 @@
   $('#shockPreset').onchange = e => { if (e.target.value) $('#shockText').value = e.target.value; };
   $('#sendShock').onclick = () => send({ t: 'shock', text: $('#shockText').value });
   $('#clearShock').onclick = () => send({ t: 'clear_shock' });
+  $('#clearMood').onclick = () => send({ t: 'clear_mood' });
+  $('#epiExit').onchange = e => send({ t: 'epilogue', exit: e.target.value ? +e.target.value : null });
   $('#reset').onclick = () => { if (!resetArmed) { resetArmed = true; $('#reset').textContent = 'Click again to reset'; setTimeout(() => { resetArmed = false; $('#reset').textContent = 'Reset this game'; }, 4000); return; } resetArmed = false; send({ t: 'reset' }); $('#reset').textContent = 'Reset this game'; };
   $('#export').onclick = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), model: MODEL.compute(S.params), state: S }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `lobbying-game-${S.code}.json`; a.click(); };
   $('#saveParams').onclick = () => {

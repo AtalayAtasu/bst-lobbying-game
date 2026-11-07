@@ -64,8 +64,58 @@
       soldValue: revenue, returnedWeight: G.map(g => g.unitsReturned * g.weightKg) };
   }
 
+  /* ---------- v2: game mechanics shared by server and screens ---------- */
+
+  // Lobbying effort is committed in irrevocable tranches. Earlier effort carries more weight:
+  // the detail of a regulation is shaped while it is being drafted, not once it is settled.
+  const BUDGET = 100;
+  const STUDY_COST = 15;                      // points spent to commission your own cost study
+  const PHASE_MULT = { position: 1.5, negotiate: 1.0, final: 0.6 };
+  const COALITION_BONUS = 0.25;               // per pact partner ending on the same option
+  const CREDIBILITY = 0.8;                    // if a group's final option differs from its first position
+  const STAR_MULT = [0.85, 0.95, 1.05, 1.15]; // regulator's rating of a group's argument (0–3 stars); unrated = 1
+
+  // Prepared news. Each item shifts the public mood: how receptive the regulator is to each option.
+  const SHOCKS = [
+    { text: 'NGO report: splitting costs by market share gives producers no reason to design greener products.', effects: { A: 0.85, B: 0.85, D: 1.15 } },
+    { text: 'A large neighbouring country has just adopted individual producer responsibility.', effects: { D: 1.2 } },
+    { text: 'Consumer associations campaign against “hidden taxes” on electronics.', effects: { E: 0.7 } },
+    { text: 'Municipalities warn that orphan waste from producers that have left the market is piling up.', effects: { D: 0.85, A: 1.1, B: 1.1 } },
+    { text: 'Ministry of Finance: the recycling scheme must not raise consumer prices.', effects: { E: 0.85, C: 1.05, D: 1.05 } }
+  ];
+
+  // How well each group did: 100 = the option best for it among those on the table, 0 = the worst.
+  function outcomeScores(M, rulesEnabled, decided) {
+    return M.groups.map((g, i) => {
+      const s = rulesEnabled.map(r => M.share[r][i]), best = Math.min(...s), worst = Math.max(...s);
+      return worst - best < 1e-9 ? 100 : Math.round(100 * (worst - M.share[decided][i]) / (worst - best));
+    });
+  }
+
+  // "Five years later": one producer has left the market, but its products keep coming back.
+  // Sharing by current sales (A, B) no longer charges it. Under return share (C) and individual
+  // responsibility (D) the share it can no longer pay becomes orphan waste, split among those
+  // still selling by units sold. Under the consumer fee (E) buyers keep paying.
+  function fiveYears(params, exitId) {
+    const p = JSON.parse(JSON.stringify(params || DEFAULT_PARAMS));
+    const ex = p.groups.findIndex(g => g.id === exitId);
+    if (ex < 0) return null;
+    p.groups[ex].unitsSold = 0;
+    const M = compute(p), G = p.groups;
+    const sumLive = G.reduce((a, g, i) => a + (i === ex ? 0 : g.unitsSold), 0) || 1;
+    const cost = {}, orphan = {};
+    for (const r of Object.keys(M.cost)) {
+      orphan[r] = (r === 'C' || r === 'D') ? M.cost[r][ex] : 0;
+      cost[r] = M.cost[r].map((c, i) => i === ex ? 0 : c + orphan[r] * G[i].unitsSold / sumLive);
+    }
+    const profit = M.profit;
+    const share = {}; for (const r in cost) share[r] = cost[r].map((c, i) => profit[i] ? c / profit[i] : 0);
+    return { exited: exitId, exIndex: ex, orphan, cost, share, profit };
+  }
+
   const fmtM = v => '€' + (Math.abs(v) >= 100 ? Math.round(v).toLocaleString('en') : v.toFixed(1)) + 'm';
   const fmtPct = v => (v * 100 >= 10 ? Math.round(v * 100) : (v * 100).toFixed(1)) + '%';
 
-  return { DEFAULT_PARAMS, RULES, compute, fmtM, fmtPct };
+  return { DEFAULT_PARAMS, RULES, compute, fmtM, fmtPct,
+    BUDGET, STUDY_COST, PHASE_MULT, COALITION_BONUS, CREDIBILITY, STAR_MULT, SHOCKS, outcomeScores, fiveYears };
 });

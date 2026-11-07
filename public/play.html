@@ -60,7 +60,7 @@
     <div class="card" id="positionCard" hidden>
       <h2 id="positionTitle">Your position</h2>
       <div class="opts" id="opts"></div>
-      <label class="small muted" for="arg" style="display:block;margin-top:14px">Your argument to the regulator (one or two sentences)</label>
+      <label class="small muted" for="arg" style="display:block;margin-top:14px">Your argument to the regulator (one or two sentences). The regulator weighs how convincing it is, not just who shouts loudest.</label>
       <textarea id="arg" maxlength="200" placeholder="Why should the regulator choose this option?"></textarea>
       <div class="row" style="margin-top:10px"><button class="btn" id="sendPos">Submit position</button><span class="small muted" id="posStatus"></span></div>
     </div>
@@ -74,12 +74,21 @@
       <div id="offers" style="margin-top:10px"></div>
     </div>
 
+    <div class="card" id="studyCard" hidden>
+      <h2>Know your numbers?</h2>
+      <p class="small">Commission a cost study for <b id="studyCost">15</b> of your lobbying points. You will see your own recycling bill under every option straight away. Other groups won’t know you have it.</p>
+      <button class="btn orange" id="buyStudy">Commission the study</button>
+    </div>
+
     <div class="card" id="pointsCard" hidden>
       <h2>Lobbying effort</h2>
-      <p class="muted small">You have 100 points of lobbying effort. Put them behind the options you want the regulator to choose.</p>
-      <div class="alloc" id="alloc"></div>
+      <p class="muted small">You have <b id="budget">100</b> points. Points you commit are spent for good. The regulator listens most while the rules are still being drafted:</p>
+      <div class="row" id="mults" style="margin:8px 0 12px"></div>
+      <div class="row"><select id="cRule" aria-label="Option"></select>
+        <span class="stepper row" style="gap:6px"><button type="button" class="btn sm ghost" id="cMinus" aria-label="Fewer points">−</button><b id="cPts" style="min-width:36px;text-align:center;font-size:20px">10</b><button type="button" class="btn sm ghost" id="cPlus" aria-label="More points">+</button></span>
+        <button class="btn" id="sendCommit">Commit</button></div>
       <div class="row" style="margin-top:12px"><div class="meter grow"><i id="ptsMeter"></i></div><b id="ptsLeft">100 left</b></div>
-      <div class="row" style="margin-top:10px"><button class="btn" id="sendPts">Save points</button><span class="small muted" id="ptsStatus"></span></div>
+      <div id="commitList" class="small" style="margin-top:8px"></div>
     </div>
 
     <div class="card" id="finalCard" hidden>
@@ -140,9 +149,9 @@
     const msgs = {
       lobby: 'You’re in. Wait for the instructor to start the briefing.',
       brief: 'Read your group’s profile and the others. Where would you want the costs to fall?',
-      position: 'Choose the option you will lobby for and write your argument. Earlier positions shape the debate.',
-      negotiate: 'All positions are now public. Talk to the other groups, offer pacts, and place your 100 points of lobbying effort.',
-      final: 'Last call: confirm your final position and your points.',
+      position: 'Choose the option you will lobby for and write your argument. Lobbying effort committed now counts ×1.5.',
+      negotiate: 'All positions are now public. Talk to the other groups, offer pacts, and commit lobbying effort (now ×1.0).',
+      final: 'Last call: confirm your final position. Effort committed now counts only ×0.6.',
       decide: 'The regulator is weighing the arguments. Wait for the decision.',
       reveal: 'The regulator has decided. See what it means for you.'
     };
@@ -154,8 +163,12 @@
 
     // numbers
     const M = MODEL.compute(S.params), i = S.you - 1;
-    $('#numbersCard').hidden = !S.numbersVisible || P === 'lobby';
-    if (S.numbersVisible) {
+    const seeNumbers = (S.numbersVisible || !!me.study) && P !== 'lobby';
+    $('#numbersCard').hidden = !seeNumbers;
+    $('#studyCard').hidden = seeNumbers || !['brief', 'position', 'negotiate'].includes(P);
+    $('#studyCost').textContent = S.studyCost;
+    $('#buyStudy').disabled = (me.spent || 0) + S.studyCost > S.budget;
+    if (seeNumbers) {
       const rows = enabled().map(r => ({ r, c: M.cost[r.id][i], s: M.share[r.id][i] }));
       const best = rows.reduce((a, b) => (b.s < a.s ? b : a), rows[0]);
       $('#numbersBody').innerHTML = rows.map(x => `<tr class="${x === best ? 'best' : ''}"><td>${x.r.id} · ${esc(x.r.short)}</td><td class="num">${MODEL.fmtM(x.c)}</td><td class="num">${MODEL.fmtPct(x.s)}</td></tr>`).join('');
@@ -198,16 +211,22 @@
       $('#offers').querySelectorAll('[data-d]').forEach(b => b.onclick = () => send({ t: 'respond', id: b.dataset.d, accept: false }));
     }
 
-    // points
-    const canPts = ['negotiate', 'final'].includes(P);
-    $('#pointsCard').hidden = !canPts;
-    if (canPts) {
-      if (!draft.dirtyPts) draft.points = Object.assign({}, me.points || {});
+    // lobbying effort: irrevocable tranches, weighted by when they are committed
+    const canPts = !!S.phaseMult[P];
+    $('#pointsCard').hidden = !(canPts || ((me.commits || []).length && ['decide', 'reveal'].includes(P)));
+    if (!$('#pointsCard').hidden) {
+      const left = S.budget - (me.spent || 0);
+      $('#budget').textContent = S.budget;
+      $('#mults').innerHTML = Object.entries(S.phaseMult).map(([ph, m]) => `<span class="pill ${ph === P ? 'orange' : ''}">${esc(PHASE_LABEL[ph])}: ×${m}${ph === P ? ' (now)' : ''}</span>`).join('');
       const ek = S.rulesEnabled.join();
-      if ($('#alloc').dataset.k !== ek) { $('#alloc').dataset.k = ek; $('#alloc').innerHTML = enabled().map(r => `<span>${r.id} · ${esc(r.short)}</span><span class="stepper"><button type="button" data-r="${r.id}" data-d="-10" aria-label="Minus 10 on ${r.id}">−</button><b id="pv${r.id}">0</b><button type="button" data-r="${r.id}" data-d="10" aria-label="Plus 10 on ${r.id}">+</button></span>`).join('');
-        $('#alloc').querySelectorAll('button').forEach(b => b.onclick = () => { const r = b.dataset.r, d = +b.dataset.d, used = Object.values(draft.points).reduce((a, x) => a + x, 0); const cur = draft.points[r] || 0; const nv = Math.max(0, Math.min(cur + d, cur + (100 - used))); draft.points[r] = nv; draft.dirtyPts = true; paintPts(); }); }
-      paintPts();
-      $('#ptsStatus').textContent = draft.dirtyPts ? 'Not saved yet' : (Object.keys(me.points || {}).length ? 'Saved' : '');
+      if ($('#cRule').dataset.k !== ek) { $('#cRule').dataset.k = ek; $('#cRule').innerHTML = enabled().map(r => `<option value="${r.id}">${r.id} · ${esc(r.short)}</option>`).join(''); }
+      if (!draft.cRuleSet && me.position && me.position.rule) { $('#cRule').value = me.position.rule; draft.cRuleSet = true; }
+      draft.cPts = Math.max(0, Math.min(draft.cPts == null ? 10 : draft.cPts, left));
+      $('#cPts').textContent = draft.cPts;
+      ['#cRule', '#cMinus', '#cPlus', '#sendCommit'].forEach(s => $(s).disabled = !canPts || left <= 0);
+      $('#sendCommit').textContent = canPts ? `Commit at ×${S.phaseMult[P]}` : 'Closed';
+      $('#ptsLeft').textContent = `${left} left`; $('#ptsMeter').style.width = (100 * (S.budget - left) / S.budget) + '%';
+      $('#commitList').innerHTML = (me.study ? `<div>🔍 Cost study: ${S.studyCost} points</div>` : '') + (me.commits || []).map(c => `<div>✔ ${c.pts} points on <b>${c.rule}</b> during ${esc(PHASE_LABEL[c.phase] || c.phase)} (×${c.mult} = ${Math.round(c.pts * c.mult)} influence)</div>`).join('') || '<span class="muted">Nothing committed yet.</span>';
     }
 
     // final
@@ -224,23 +243,25 @@
       const r = S.decision.rule, mine = M.cost[r][i], share = M.share[r][i];
       const bestR = S.rulesEnabled.reduce((a, b) => (M.share[b][i] < M.share[a][i] ? b : a), S.rulesEnabled[0]);
       const sub = M.subsidy[r][i];
+      const scores = MODEL.outcomeScores(M, S.rulesEnabled, r), rank = 1 + scores.filter(x => x > scores[i]).length;
       $('#outcomeCard').innerHTML = `<h2>The regulator chose ${r}: ${esc(LG.ruleName(rules, r))}</h2>
+        <p class="hand" style="font-size:34px;margin:6px 0">Your result: ${scores[i]} / 100 · rank ${rank} of ${scores.length}</p>
+        <p class="muted small">100 = the option best for you among those on the table; 0 = the worst.</p>
         <p class="big">Your bill: ${MODEL.fmtM(mine)} a year, ${MODEL.fmtPct(share)} of your profit</p>
         <p>Your best option would have been <b>${bestR} · ${esc(LG.ruleName(rules, bestR))}</b>: ${MODEL.fmtM(M.cost[bestR][i])} (${MODEL.fmtPct(M.share[bestR][i])} of profit).</p>
         ${r !== 'E' ? `<p>${sub > 0.05 ? `You pay ${MODEL.fmtM(sub)} more than the cost of recycling your own returns: you are paying for other producers’ waste.` : sub < -0.05 ? `You pay ${MODEL.fmtM(-sub)} less than the cost of recycling your own returns: other producers are paying for your waste.` : 'You pay about what your own returns cost to recycle.'}</p>` : '<p>Consumers pay the recycling fee; your cost is the profit lost to lower sales.</p>'}`;
     }
   }
 
-  function paintPts() {
-    const used = Object.values(draft.points || {}).reduce((a, x) => a + x, 0);
-    enabled().forEach(r => { const el = $('#pv' + r.id); if (el) el.textContent = (draft.points[r.id] || 0); });
-    $('#ptsLeft').textContent = `${100 - used} left`; $('#ptsMeter').style.width = used + '%';
-  }
 
   $('#arg').addEventListener('input', () => { draft.dirtyArg = true; });
   $('#sendPos').onclick = () => { if (!draft.rule) return toast('Choose an option first.'); send({ t: 'position', rule: draft.rule, argument: $('#arg').value }); draft.dirtyArg = false; toast('Position sent.'); };
   $('#coalSend').onclick = () => send({ t: 'propose', to: +$('#coalTeam').value, rule: $('#coalRule').value });
-  $('#sendPts').onclick = () => { send({ t: 'points', points: draft.points }); draft.dirtyPts = false; toast('Points saved.'); };
+  const stepPts = d => { const left = S.budget - (S.teams[S.you].spent || 0); draft.cPts = Math.max(5, Math.min(left, (draft.cPts || 0) + d)); $('#cPts').textContent = draft.cPts; };
+  $('#cMinus').onclick = () => stepPts(-5);
+  $('#cPlus').onclick = () => stepPts(5);
+  $('#sendCommit').onclick = () => { if (!draft.cPts) return toast('Choose how many points.'); send({ t: 'commit', rule: $('#cRule').value, pts: draft.cPts }); toast(`${draft.cPts} points committed to ${$('#cRule').value}.`); };
+  $('#buyStudy').onclick = () => { send({ t: 'study' }); toast('Study commissioned: your numbers are below.'); };
   $('#sendFinal').onclick = () => { if (!draft.final) return toast('Choose an option first.'); send({ t: 'final', rule: draft.final }); toast('Final position confirmed.'); };
 })();
 </script>
