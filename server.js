@@ -129,7 +129,7 @@ function handle(c, m) {
       // manual fallback: the instructor records a group's position
       const t = room.teams[m.team]; if (!t) return err(ws, 'Unknown team.'); const p = m.patch || {};
       if (p.rule && RULE_IDS.includes(p.rule)) t.position = { rule: p.rule, argument: clean(p.argument != null ? p.argument : (t.position && t.position.argument), 200), at: now() - (room.startedAt || room.createdAt), byHost: true };
-      log(room, 'host_edit', t.id); return broadcast(c.room);
+      log(room, 'host_edit', t.id, p.rule && RULE_IDS.includes(p.rule) ? p.rule : null); return broadcast(c.room);
     }
     if (m.t === 'params') {
       const P = m.params; if (!P || !Array.isArray(P.groups) || P.groups.length !== 5) return err(ws, 'Parameters must list five groups.');

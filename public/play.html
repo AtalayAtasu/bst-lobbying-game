@@ -156,12 +156,12 @@
     // outcome
     $('#outcomeCard').hidden = P !== 'reveal' || !S.decision;
     if (P === 'reveal' && S.decision) {
-      const r = S.decision.rule, mine = M.cost[r][i], share = M.share[r][i];
-      const bestR = S.rulesEnabled.reduce((a, b) => (M.share[b][i] < M.share[a][i] ? b : a), S.rulesEnabled[0]);
+      const r = S.decision.rule, mine = M.cost[r][i];
+      const bestR = S.rulesEnabled.reduce((a, b) => (M.cost[b][i] < M.cost[a][i] ? b : a), S.rulesEnabled[0]);
       const sub = M.subsidy[r][i];
       $('#outcomeCard').innerHTML = `<h2>The regulator chose ${r}: ${esc(LG.ruleName(rules, r))}</h2>
-        <p class="big">Your bill: ${MODEL.fmtM(mine)} a year, ${MODEL.fmtPct(share)} of your profit</p>
-        <p>Your best option would have been <b>${bestR} · ${esc(LG.ruleName(rules, bestR))}</b>: ${MODEL.fmtM(M.cost[bestR][i])} (${MODEL.fmtPct(M.share[bestR][i])} of profit).</p>
+        <p class="big">Your bill: ${MODEL.fmtM(mine)} a year</p>
+        <p>Your best option would have been <b>${bestR} · ${esc(LG.ruleName(rules, bestR))}</b>: ${MODEL.fmtM(M.cost[bestR][i])} a year.</p>
         ${r !== 'E' ? `<p>${sub > 0.05 ? `You pay ${MODEL.fmtM(sub)} more than the cost of recycling your own returns: you are paying for other producers’ waste.` : sub < -0.05 ? `You pay ${MODEL.fmtM(-sub)} less than the cost of recycling your own returns: other producers are paying for your waste.` : 'You pay about what your own returns cost to recycle.'}</p>` : '<p>Consumers pay the recycling fee; your cost is the profit lost to lower sales.</p>'}`;
     }
   }

@@ -93,7 +93,7 @@
 (function () {
   const { $, esc, mmss, shock, PHASE_LABEL } = LG;
   const room = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
-  let S = null, rules = MODEL.RULES, tab = 0, lastRevealKey = '';
+  let S = null, rules = MODEL.RULES, tab = 0, lastRevealKey = '', wantTab = new URLSearchParams(location.search).get('tab');
   const NOTE = ['#E1F1E9', '#FFF1C9', '#E3F2F1', '#FFE6D2', '#EDE7F6'];
   const C = { ink: '#10302A', green: '#00684B', leaf: '#019F6E', orange: '#F38B32', red: '#E0352B', blue: '#2F5FD0', grey: '#9AA9A3', muted: '#5E746D' };
 
@@ -152,7 +152,7 @@
   const DRAW = { bill: drawBill, subsidy: drawSubsidy, map: drawMap, time: drawTime, later: drawLater };
   function reveal() {
     const r = S.decision && S.decision.rule;
-    TABS = ALLTABS.filter(t => t[0] !== 'later' || S.epilogue); if (tab >= TABS.length) tab = 0;
+    TABS = ALLTABS.filter(t => t[0] !== 'later' || S.epilogue); if (wantTab) { tab = Math.max(0, TABS.findIndex(t => t[0] === wantTab)); wantTab = null; } if (tab >= TABS.length) tab = 0;
     $('#ttl').textContent = r ? `The regulator chose ${r}: ${(rules.find(x => x.id === r) || {}).short || r}` : 'Waiting for the decision';
     $('#tabs').innerHTML = TABS.map((t, i) => `<button class="${i === tab ? 'on' : ''}" data-i="${i}">${t[1]}</button>`).join('');
     $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { tab = +b.dataset.i; reveal(); });
@@ -167,27 +167,26 @@
 
   function txt(svg, x, y, s, o = {}) { const t = document.createElementNS('http://www.w3.org/2000/svg', 'text'); t.setAttribute('x', x); t.setAttribute('y', y); t.setAttribute('text-anchor', o.a || 'middle'); t.setAttribute('font-size', o.size || 20); t.setAttribute('fill', o.fill || C.ink); if (o.w) t.setAttribute('font-weight', o.w); if (o.hand) { t.setAttribute('font-family', 'Caveat'); } t.textContent = s; svg.appendChild(t); return t; }
 
-  // 1. each group's bill under the decision, as a share of profit, against the option that suited it best
+  // 1. each group's bill under the decision (EUR million a year), against the cheapest option for that group
   function drawBill(M, r) {
     const svg = $('#svg-bill'); svg.innerHTML = ''; const rc = rough.svg(svg);
     const G = S.params.groups, L = 260, Rr = 1500, W = (Rr - L) / G.length;
-    const vals = G.map((g, i) => M.share[r][i]), bests = G.map((g, i) => Math.min(...S.rulesEnabled.map(x => M.share[x][i])));
+    const vals = G.map((g, i) => M.cost[r][i]), bests = G.map((g, i) => Math.min(...S.rulesEnabled.map(x => M.cost[x][i])));
     const vmax = Math.max(1, ...vals, ...bests) * 1.1, Y = v => 560 - Math.sqrt(Math.max(0, v) / vmax) * 480; // square-root scale so small and very large bills both read
     svg.appendChild(rc.line(L - 20, 560, Rr, 560, { stroke: C.ink, strokeWidth: 2.4 }));
-    [0, .05, .25, 1, 2, 5, 10].filter(v => v <= vmax).forEach(v => { txt(svg, L - 30, Y(v) + 7, MODEL.fmtPct(v), { a: 'end', size: 18, fill: C.muted }); svg.appendChild(rc.line(L - 20, Y(v), Rr, Y(v), { stroke: '#E3ECE7', strokeWidth: 1, roughness: .3 })); });
+    [0, 1, 5, 10, 25, 50, 100, 250, 500, 1000].filter(v => v <= vmax).forEach(v => { txt(svg, L - 30, Y(v) + 7, '€' + v + 'm', { a: 'end', size: 18, fill: C.muted }); svg.appendChild(rc.line(L - 20, Y(v), Rr, Y(v), { stroke: '#E3ECE7', strokeWidth: 1, roughness: .3 })); });
     txt(svg, 70, 66, 'square-root scale', { a: 'start', size: 16, fill: C.muted });
-    txt(svg, 70, 40, 'Recycling bill under the decision, as a share of profit', { a: 'start', size: 22, w: 700 });
+    txt(svg, 70, 40, 'Recycling bill under the decision (€ million a year)', { a: 'start', size: 22, w: 700 });
     G.forEach((g, i) => {
       const x = L + i * W + W * .2, w = W * .6, v = vals[i];
       svg.appendChild(rc.rectangle(x, Y(v), w, 560 - Y(v), { fill: C.green, fillStyle: 'hachure', hachureGap: 8, stroke: C.ink, strokeWidth: 2, seed: i + 1 }));
-      txt(svg, x + w / 2, Y(v) - 14, MODEL.fmtPct(v), { size: 26, w: 800, fill: C.green });
-      txt(svg, x + w / 2, Y(v) - 44, MODEL.fmtM(M.cost[r][i]), { size: 18, fill: C.muted });
+      txt(svg, x + w / 2, Y(v) - 14, MODEL.fmtM(v), { size: 26, w: 800, fill: C.green });
       svg.appendChild(rc.line(x - 10, Y(bests[i]), x + w + 10, Y(bests[i]), { stroke: C.orange, strokeWidth: 4, seed: 20 + i }));
       txt(svg, x + w / 2, 596, `Group ${g.id}`, { size: 20, w: 700 }); txt(svg, x + w / 2, 622, g.name, { size: 20 });
       const fr = S.teams[g.id].position && S.teams[g.id].position.rule;
       txt(svg, x + w / 2, 652, fr ? `lobbied for ${fr}` : 'no position', { size: 26, hand: true, fill: fr === r ? C.leaf : C.orange });
     });
-    txt(svg, 1500, 40, '— best available option for that group', { a: 'end', size: 28, hand: true, fill: C.orange });
+    txt(svg, 1500, 40, '— its cheapest option on the table', { a: 'end', size: 28, hand: true, fill: C.orange });
   }
 
   // 2. pays for others' waste (+) or has its waste paid by others (−), relative to recycling its own returns
@@ -221,7 +220,7 @@
       const cx = X(xs[i]), cy = Y(ys[i]), d = 30 + 50 * Math.sqrt(M.profit[i] / Math.max(...M.profit));
       svg.appendChild(rc.circle(cx, cy, d, { fill: C.green, fillStyle: 'solid', stroke: C.ink, seed: 50 + i }));
       txt(svg, cx + d / 2 + 12, cy - 4, `Group ${g.id}: ${g.name}`, { a: 'start', size: 22, w: 700 });
-      txt(svg, cx + d / 2 + 12, cy + 24, `bill under ${r}: ${MODEL.fmtPct(M.share[r][i])} of profit`, { a: 'start', size: 19, fill: C.muted });
+      txt(svg, cx + d / 2 + 12, cy + 24, `bill under ${r}: ${MODEL.fmtM(M.cost[r][i])} a year`, { a: 'start', size: 19, fill: C.muted });
     });
     txt(svg, 1500, 640, 'Circle size: annual profit', { a: 'end', size: 26, hand: true, fill: C.orange });
   }
@@ -257,17 +256,47 @@
   // 4. timeline of positions, changes of position and the decision
   function drawTime(M, r) {
     const svg = $('#svg-time'); svg.innerHTML = ''; const rc = rough.svg(svg);
-    const L0 = S.log || [], evs = L0.filter(e => ['position', 'revise', 'decision', 'phase'].includes(e.type));
-    const tmax = Math.max(60000, ...evs.map(e => e.at)), L = 330, Rr = 1520, X = t => L + t / tmax * (Rr - L);
-    const lane = id => 60 + (id - 1) * 95;
-    S.params.groups.forEach(g => { txt(svg, L - 20, lane(g.id) + 7, `Group ${g.id}: ${g.name}`, { a: 'end', size: 18, w: 700 }); svg.appendChild(rc.line(L, lane(g.id), Rr, lane(g.id), { stroke: '#DCE6E1', strokeWidth: 1.4, roughness: .4 })); });
-    svg.appendChild(rc.line(L, 560, Rr, 560, { stroke: C.ink, strokeWidth: 2 }));
-    evs.filter(e => e.type === 'phase').forEach(e => { svg.appendChild(rc.line(X(e.at), 30, X(e.at), 560, { stroke: C.grey, strokeWidth: 1.2, strokeLineDash: [6, 8], roughness: .3 })); txt(svg, X(e.at) + 6, 586, PHASE_LABEL[e.detail] || e.detail, { a: 'start', size: 16, fill: C.muted }); });
-    evs.forEach(e => {
-      if (e.type === 'position' || e.type === 'revise') { const y = lane(e.team), first = e.type === 'position'; svg.appendChild(rc.circle(X(e.at), y, 30, { fill: first ? C.green : '#fff', fillStyle: 'solid', stroke: C.green, strokeWidth: 2, seed: Math.round(e.at) % 97 })); txt(svg, X(e.at), y + 6, e.detail, { size: 16, w: 800, fill: first ? '#fff' : C.green }); }
-      if (e.type === 'decision') { txt(svg, X(e.at), 620, `decision: ${e.detail}`, { size: 28, hand: true, fill: C.green }); }
+    const OPT = { A: '#2F5FD0', B: '#6B4FA0', C: '#E07B1F', D: '#019F6E', E: '#0E7C86' };
+    const log = S.log || [], ph = p => { const e = log.find(e => e.type === 'phase' && e.detail === p); return e ? e.at : null; };
+    const moves = log.filter(e => e.type === 'position' || e.type === 'revise' || (e.type === 'host_edit'));
+    const t0 = ph('position') != null ? ph('position') : Math.min(0, ...moves.map(e => e.at));
+    const t1 = ph('decide') != null ? ph('decide') : Math.max(t0 + 60000, ...moves.map(e => e.at + 15000));
+    const span = Math.max(60000, t1 - t0), L = 380, Rr = 1340, X = t => L + Math.max(0, Math.min(1, (t - t0) / span)) * (Rr - L);
+    const G = S.params.groups, lane = id => 150 + (id - 1) * 88, base = lane(G.length) + 50;
+    const mm = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+    // who moved first
+    const firsts = G.map(g => { const e = moves.find(e => e.team === g.id); return e ? { id: g.id, at: e.at } : null; }).filter(Boolean).sort((a, b) => a.at - b.at);
+    const rank = id => firsts.findIndex(f => f.id === id);
+    txt(svg, 70, 36, 'Who committed early, and who waited?', { a: 'start', size: 24, w: 700 });
+    txt(svg, 70, 64, 'Each dot is a position taken during the round; the letter is the option. Arrows mark a change of mind.', { a: 'start', size: 17, fill: C.muted });
+    // time axis: ticks every 1 or 2 minutes
+    const step = span > 8 * 60000 ? 120000 : 60000;
+    for (let t = 0; t <= span + 1; t += step) {
+      svg.appendChild(rc.line(X(t0 + t), lane(1) - 40, X(t0 + t), base, { stroke: '#E3ECE7', strokeWidth: 1, roughness: .2 }));
+      if (X(t0 + t) < Rr - 40) txt(svg, X(t0 + t), base + 28, mm(t), { size: 17, fill: C.muted });
+    }
+    svg.appendChild(rc.line(L, base, Rr, base, { stroke: C.ink, strokeWidth: 2 }));
+    txt(svg, (L + Rr) / 2, base + 58, 'minutes since the round opened', { size: 17, fill: C.muted });
+    svg.appendChild(rc.line(Rr, lane(1) - 46, Rr, base, { stroke: C.ink, strokeWidth: 2, strokeLineDash: [8, 8], roughness: .4 }));
+    txt(svg, Rr, lane(1) - 54, 'round closed at ' + mm(span), { size: 24, hand: true, fill: C.ink });
+    G.forEach(g => {
+      const y = lane(g.id), mine = moves.filter(e => e.team === g.id), k = rank(g.id);
+      txt(svg, L - 30, y - 2, `Group ${g.id}: ${g.name}`, { a: 'end', size: 19, w: 700 });
+      txt(svg, L - 30, y + 22, mine.length ? `first in at ${mm(mine[0].at - t0)}${mine.length > 1 ? ` · changed ${mine.length - 1}×` : ''}` : 'no position', { a: 'end', size: 15, fill: C.muted });
+      svg.appendChild(rc.line(L, y, Rr, y, { stroke: '#DCE6E1', strokeWidth: 2, roughness: .3, seed: g.id }));
+      let prev = null;
+      mine.forEach((e, j) => {
+        const x = X(e.at), col = OPT[e.detail] || C.grey;
+        if (prev) { const px = X(prev.at) + 22, nx = x - 22; if (nx - px > 8) { svg.appendChild(rc.curve([[px, y - 4], [(px + nx) / 2, y - 34], [nx, y - 6]], { stroke: C.muted, strokeWidth: 2, seed: 40 + j })); svg.appendChild(rc.linearPath([[nx - 13, y - 17], [nx, y - 6], [nx - 15, y - 2]], { stroke: C.muted, strokeWidth: 2, roughness: .4, seed: 50 + j })); } }
+        svg.appendChild(rc.circle(x, y, 40, { fill: col, fillStyle: 'solid', stroke: C.ink, strokeWidth: 1.6, roughness: .8, seed: 60 + g.id * 7 + j }));
+        txt(svg, x, y + 7, e.detail || '?', { size: 20, w: 800, fill: '#fff' });
+        prev = e;
+      });
+      if (k >= 0 && k < 3) txt(svg, X(mine[0].at), y - 30, ['1st', '2nd', '3rd'][k], { size: 24, hand: true, fill: C.orange });
+      const fin = S.teams[g.id].position && S.teams[g.id].position.rule;
+      if (fin) { svg.appendChild(rc.rectangle(Rr + 24, y - 22, 150, 44, { fill: OPT[fin] || C.grey, fillStyle: 'solid', stroke: C.ink, strokeWidth: 1.6, roughness: .8, seed: 90 + g.id })); txt(svg, Rr + 99, y + 7, `final: ${fin}`, { size: 20, w: 800, fill: '#fff' }); }
     });
-    txt(svg, Rr, 650, '● first position   ○ changed position   minutes since start', { a: 'end', size: 18, fill: C.muted });
+    if (r) txt(svg, Rr + 99, base + 34, `regulator chose ${r}`, { size: 26, hand: true, fill: C.green });
   }
 })();
 </script>
