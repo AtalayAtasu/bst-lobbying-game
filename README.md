@@ -1,42 +1,37 @@
 # The Lobbying Game
 
-Classroom game for *Business Sustainability Thinking* (Sessions 3–4): five producers lobby a regulator over how to implement the WEEE Directive, that is, who pays to collect and recycle e-waste.
+Classroom game for *Business Sustainability Thinking* (Sessions 3–4). Five producers lobby the regulator over how to implement the WEEE Directive: who pays to collect and recycle e-waste. One round: each group takes one position and writes one argument; the instructor, as regulator, decides; the outcome charts show who pays for whose waste.
 
 ## Pages
 
 | Address | Who | What |
 |---|---|---|
-| `/host` | Instructor | Sign in, start a game, move through the phases, send news, decide, see the tally |
+| `/host` | Instructor | Sign in, start a game, move through the phases, decide |
 | `/screen?room=CODE` | Projector | Join code and QR, positions board, outcome charts |
-| `/play?room=CODE` | One device per group | Profile, position, pacts, lobbying points, outcome |
+| `/play?room=CODE` | One device per group | Profile, position and argument, outcome |
 
-## Running a class (about 20 minutes of play)
+## Running a class (about 15–20 minutes)
 
-1. Open `/host`, sign in, **Start a new game**. Open the projector link.
-2. **Joining**: groups scan the QR code and pick their group (one device each). A group whose device drops can rejoin on the same device; if it changes device, click **Release** in the console.
-3. **Briefing** (≈3 min): profiles and the options on the table.
-4. **Take a position** (≈5 min): each group picks an option and writes an argument. Positions stay hidden; timing is recorded.
-5. **Negotiate** (≈8 min): positions become public. Groups offer pacts and place 100 lobbying points. Optionally tick **Show each group its own numbers** and send **Breaking news**.
-6. **Final round** (≈4 min): groups confirm their final option.
-7. **Regulator deciding**: the tally helps you; you choose. **Outcome** reveals four charts on the projector (← → to switch).
+1. **Joining**: groups scan the QR code and pick their producer (one device each). If a group switches device, click **Release** in the console.
+2. **Briefing** (≈3 min): profiles and the five options.
+3. **Take a position** (≈8–10 min): each group picks ONE option and writes a one- or two-sentence argument. Positions are hidden from other groups and can be changed until you close the round.
+4. **Regulator deciding**: positions and arguments appear on the projector. You choose the option.
+5. **Outcome**: who pays what, whose waste, volume and value, how it unfolded, and optionally five years later (← → to switch).
 
-If the network fails, use **Edit** on a group's row to enter its choices by hand.
-
-## Tally (decision aid only)
-
-score(option) = Σ groups' points × coalition bonus (+25% per pact partner whose final option is the same) × credibility (×0.8 if the group's final option differs from its first position).
+No points, pacts, news or scores: the decision is yours, and the debrief is about who pays for whose waste. If the network fails, use **Edit** on a group's row to enter its position by hand.
 
 ## Cost model (illustrative, editable in the console)
 
-Recycling cost per returned unit = handling + weight × €/kg × toxicity. Total cost is shared:
+Recycling cost per returned unit = handling + weight × €/kg × toxicity. The total is shared:
 A by units sold, B by weight sold, C by weight returned, D each pays its own returns, E consumers pay a flat fee per product and producers lose profit through lower sales (elasticity × fee/price × profit).
+
+**Five years later** (optional): pick a producer that leaves the market. Under A and B it stops paying; under C and D its share becomes orphan waste paid by those still selling, by units sold; under E buyers keep paying.
 
 ## Deploy on Render
 
-1. Put this folder in a GitHub repository.
-2. On Render: **New → Blueprint** and select the repository (uses `render.yaml`), or **New → Web Service** with build `npm install`, start `npm start`.
-3. Set `HOST_PASSWORD`. The free plan sleeps after 15 idle minutes: open `/host` a few minutes before class.
+1. On Render: **New → Blueprint** and select this repository (uses `render.yaml`), or **New → Web Service** with build `npm install`, start `npm start`.
+2. Set `HOST_PASSWORD`. The free plan sleeps after 15 idle minutes: open `/host` a few minutes before class.
 
-Game state is kept in memory and in `data/rooms.json`; on the free plan this is lost when the service restarts. Download results from the console (**Download results**) after class.
+Game state is kept in memory and in `data/rooms.json`; on the free plan it is lost when the service restarts. Download results from the console after class.
 
 Local run: `npm install && HOST_PASSWORD=secret npm start`, then open http://localhost:3000/host.
