@@ -15,10 +15,8 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const PUBLIC = path.join(__dirname, 'public');
 if (!process.env.HOST_PASSWORD) console.warn('[warn] HOST_PASSWORD is not set; using the default "change-me".');
 
-const PHASES = ['lobby', 'brief', 'position', 'negotiate', 'final', 'decide', 'reveal'];
+const PHASES = ['lobby', 'brief', 'position', 'decide', 'reveal'];
 const RULE_IDS = MODEL.RULES.map(r => r.id);
-const SHOCK_PRESETS = MODEL.SHOCKS;
-
 /* ---------------- state ---------------- */
 let rooms = {};
 const hostTokens = new Set();
@@ -28,9 +26,9 @@ const uid = (n = 8) => crypto.randomBytes(n).toString('hex');
 function newRoom(code) {
   const params = JSON.parse(JSON.stringify(MODEL.DEFAULT_PARAMS));
   const teams = {};
-  params.groups.forEach(g => { teams[g.id] = { id: g.id, clientId: null, claimedAt: null, position: null, firstPosition: null, final: null, commits: [], study: null, stars: null }; });
-  return { code, createdAt: now(), startedAt: null, phase: 'lobby', numbersVisible: false, showTally: false,
-    rulesEnabled: RULE_IDS.slice(), params, teams, proposals: [], shock: null, shocks: [], mood: {}, epilogue: null, decision: null, log: [] };
+  params.groups.forEach(g => { teams[g.id] = { id: g.id, clientId: null, claimedAt: null, position: null }; });
+  return { code, createdAt: now(), startedAt: null, phase: 'lobby', numbersVisible: false,
+    rulesEnabled: RULE_IDS.slice(), params, teams, decision: null, epilogue: null, log: [] };
 }
 function code4() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; let c; do { c = Array.from({ length: 4 }, () => A[crypto.randomInt(A.length)]).join(''); } while (rooms[c]); return c; }
 function log(room, type, team, detail) { room.log.push({ at: now() - (room.startedAt || room.createdAt), type, team: team || null, detail: detail || null }); if (room.log.length > 2000) room.log.shift(); }
@@ -39,65 +37,22 @@ function log(room, type, team, detail) { room.log.push({ at: now() - (room.start
 let saveTimer = null;
 function save() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(path.join(DATA_DIR, 'rooms.json'), JSON.stringify(rooms)); } catch (e) { console.error('save failed', e.message); } }, 400); }
 try { rooms = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'rooms.json'), 'utf8')); console.log('restored rooms:', Object.keys(rooms).join(', ') || 'none'); } catch (_) { rooms = {}; }
-Object.values(rooms).forEach(r => { r.mood = r.mood || {}; r.epilogue = r.epilogue || null; Object.values(r.teams).forEach(t => { t.commits = t.commits || []; t.study = t.study || null; t.stars = t.stars == null ? null : t.stars; delete t.points; }); });
-
-/* ---------------- derived numbers ---------------- */
-function finalRule(t) { return (t.final && t.final.rule) || (t.position && t.position.rule) || null; }
-function partners(room, teamId, rule) {
-  const set = new Set();
-  room.proposals.forEach(p => { if (p.status === 'accepted' && p.rule === rule && (p.from === teamId || p.to === teamId)) set.add(p.from === teamId ? p.to : p.from); });
-  return [...set].filter(j => finalRule(room.teams[j]) === rule);
-}
-const spent = t => (t.commits || []).reduce((a, c) => a + c.pts, 0) + (t.study ? MODEL.STUDY_COST : 0);
-const pointsBy = t => { const o = {}; (t.commits || []).forEach(c => { o[c.rule] = (o[c.rule] || 0) + c.pts; }); return o; };
-function tally(room) {
-  const out = {}; RULE_IDS.forEach(r => out[r] = { score: 0, rawPoints: 0, mood: room.mood[r] || 1, supporters: [] });
-  Object.values(room.teams).forEach(t => {
-    const fr = finalRule(t);
-    const credible = !t.firstPosition || !fr || t.firstPosition.rule === fr;
-    const cred = credible ? 1 : MODEL.CREDIBILITY;
-    const star = t.stars == null ? 1 : MODEL.STAR_MULT[t.stars];
-    for (const r of RULE_IDS) {
-      const cs = (t.commits || []).filter(c => c.rule === r); if (!cs.length) continue;
-      const timed = cs.reduce((a, c) => a + c.pts * c.mult, 0), pts = cs.reduce((a, c) => a + c.pts, 0);
-      const mult = fr === r ? 1 + MODEL.COALITION_BONUS * partners(room, t.id, r).length : 1;
-      out[r].score += timed * cred * mult * star; out[r].rawPoints += pts;
-      out[r].supporters.push({ team: t.id, points: pts, timed: Math.round(timed * 10) / 10, cred, mult, star });
-    }
-  });
-  RULE_IDS.forEach(r => { out[r].score = Math.round(out[r].score * out[r].mood * 10) / 10; });
-  return out;
-}
+Object.values(rooms).forEach(r => { if (!PHASES.includes(r.phase)) r.phase = 'decide'; r.epilogue = r.epilogue || null; });
 
 /* ---------------- views (what each role may see) ---------------- */
 function view(room, role, teamId) {
-  const phaseIdx = PHASES.indexOf(room.phase);
-  const positionsPublic = phaseIdx >= PHASES.indexOf('negotiate');
+  // positions stay private to each group (and the host) until the regulator starts deciding
+  const positionsPublic = PHASES.indexOf(room.phase) >= PHASES.indexOf('decide');
   const revealed = room.phase === 'reveal';
   const teams = {};
   Object.values(room.teams).forEach(t => {
-    const mine = role === 'team' && t.id === teamId;
-    const all = role === 'host' || revealed;
-    teams[t.id] = {
-      id: t.id, claimed: !!t.clientId,
-      position: (all || mine || positionsPublic) ? t.position : (t.position ? { submitted: true, at: t.position.at } : null),
-      firstPosition: (all || mine) ? t.firstPosition : null,
-      final: (all || mine || room.phase === 'decide') ? t.final : (t.final ? { submitted: true } : null),
-      points: (all || mine) ? pointsBy(t) : null,
-      commits: (all || mine) ? t.commits : null,
-      spent: (all || mine) ? spent(t) : null,
-      study: (all || mine) ? t.study : null,
-      stars: (role === 'host' || revealed) ? t.stars : null
-    };
+    const see = role === 'host' || positionsPublic || (role === 'team' && t.id === teamId);
+    teams[t.id] = { id: t.id, claimed: !!t.clientId, position: see ? t.position : (t.position ? { submitted: true, at: t.position.at } : null) };
   });
   const v = { code: room.code, phase: room.phase, phases: PHASES, numbersVisible: room.numbersVisible, rulesEnabled: room.rulesEnabled,
-    params: room.params, teams, shock: room.shock, mood: room.mood, epilogue: (revealed || role === 'host') ? room.epilogue : null,
-    budget: MODEL.BUDGET, studyCost: MODEL.STUDY_COST, phaseMult: MODEL.PHASE_MULT, decision: (revealed || role === 'host') ? room.decision : null, shockPresets: role === 'host' ? SHOCK_PRESETS : undefined,
-    proposals: room.proposals.filter(p => role === 'host' || revealed || p.status === 'accepted' || (role === 'team' && (p.from === teamId || p.to === teamId))),
-    serverTime: now(), startedAt: room.startedAt };
-  if (role === 'host' || (role === 'screen' && room.showTally) || revealed) v.tally = tally(room);
+    params: room.params, teams, decision: (revealed || role === 'host') ? room.decision : null,
+    epilogue: (revealed || role === 'host') ? room.epilogue : null, serverTime: now(), startedAt: room.startedAt };
   if (role === 'host' || revealed) v.log = room.log;
-  if (role === 'host') v.showTally = room.showTally;
   if (role === 'team') v.you = teamId;
   return v;
 }
@@ -147,45 +102,12 @@ function handle(c, m) {
       t.clientId = c.clientId; t.claimedAt = now(); c.teamId = t.id; log(room, 'join', t.id); return broadcast(c.room);
     }
     const t = room.teams[c.teamId]; if (!t || t.clientId !== c.clientId) return err(ws, 'Choose your team first.');
-    const P = room.phase;
     if (m.t === 'position') {
-      if (!['position', 'negotiate'].includes(P)) return err(ws, 'Positions can be changed only during the position and negotiation phases.');
+      if (room.phase !== 'position') return err(ws, 'Positions can be taken only while the round is open.');
       if (!room.rulesEnabled.includes(m.rule)) return err(ws, 'That option is not on the table.');
-      const pos = { rule: m.rule, argument: clean(m.argument, 200), at: now() - (room.startedAt || room.createdAt) };
-      if (!t.firstPosition && P === 'position') t.firstPosition = { ...pos };
-      if (!t.firstPosition && P === 'negotiate') t.firstPosition = { ...pos };
-      t.position = pos; log(room, 'position', t.id, pos.rule); return broadcast(c.room);
-    }
-    if (m.t === 'propose') {
-      if (P !== 'negotiate') return err(ws, 'Coalitions open in the negotiation phase.');
-      const to = +m.to; if (!room.teams[to] || to === t.id || !room.rulesEnabled.includes(m.rule)) return err(ws, 'Pick another team and an option.');
-      if (room.proposals.some(p => p.status !== 'declined' && p.rule === m.rule && ((p.from === t.id && p.to === to) || (p.from === to && p.to === t.id)))) return err(ws, 'You already have a pact or offer with that team on this option.');
-      room.proposals.push({ id: uid(4), from: t.id, to, rule: m.rule, status: 'pending', at: now() - (room.startedAt || room.createdAt) });
-      log(room, 'propose', t.id, `${to}:${m.rule}`); return broadcast(c.room);
-    }
-    if (m.t === 'respond') {
-      const p = room.proposals.find(p => p.id === m.id && p.to === t.id && p.status === 'pending'); if (!p) return err(ws, 'That offer is no longer open.');
-      if (P !== 'negotiate') return err(ws, 'Coalitions can be agreed only in the negotiation phase.');
-      p.status = m.accept ? 'accepted' : 'declined'; log(room, m.accept ? 'pact' : 'decline', t.id, `${p.from}:${p.rule}`); return broadcast(c.room);
-    }
-    if (m.t === 'commit') {
-      if (!MODEL.PHASE_MULT[P]) return err(ws, 'Lobbying effort can be committed from the position phase to the final round.');
-      if (!room.rulesEnabled.includes(m.rule)) return err(ws, 'That option is not on the table.');
-      const pts = clamp(Math.round(+m.pts || 0), 0, MODEL.BUDGET); if (!pts) return err(ws, 'Choose how many points to commit.');
-      if (spent(t) + pts > MODEL.BUDGET) return err(ws, 'You have only ' + (MODEL.BUDGET - spent(t)) + ' points left.');
-      t.commits.push({ rule: m.rule, pts, phase: P, mult: MODEL.PHASE_MULT[P], at: now() - (room.startedAt || room.createdAt) });
-      log(room, 'commit', t.id, pts + '→' + m.rule + ' ×' + MODEL.PHASE_MULT[P]); return broadcast(c.room);
-    }
-    if (m.t === 'study') {
-      if (!['brief', 'position', 'negotiate'].includes(P)) return err(ws, 'Studies can be commissioned until the final round.');
-      if (t.study) return err(ws, 'You already have your cost study.');
-      if (spent(t) + MODEL.STUDY_COST > MODEL.BUDGET) return err(ws, 'Not enough points left for a study.');
-      t.study = { at: now() - (room.startedAt || room.createdAt), phase: P }; log(room, 'study', t.id); return broadcast(c.room);
-    }
-    if (m.t === 'final') {
-      if (P !== 'final') return err(ws, 'Final positions are taken in the final round.');
-      if (!room.rulesEnabled.includes(m.rule)) return err(ws, 'That option is not on the table.');
-      t.final = { rule: m.rule, at: now() - (room.startedAt || room.createdAt) }; log(room, 'final', t.id, m.rule); return broadcast(c.room);
+      const first = !t.position;
+      t.position = { rule: m.rule, argument: clean(m.argument, 200), at: now() - (room.startedAt || room.createdAt) };
+      log(room, first ? 'position' : 'revise', t.id, m.rule); return broadcast(c.room);
     }
     return err(ws, 'Unknown action.');
   }
@@ -198,27 +120,15 @@ function handle(c, m) {
       room.phase = m.phase; if (!room.startedAt && m.phase !== 'lobby') room.startedAt = now();
       log(room, 'phase', null, m.phase); return broadcast(c.room);
     }
-    if (m.t === 'toggle' && ['numbersVisible', 'showTally'].includes(m.key)) { room[m.key] = !!m.value; log(room, m.key, null, String(!!m.value)); return broadcast(c.room); }
+    if (m.t === 'toggle' && m.key === 'numbersVisible') { room[m.key] = !!m.value; log(room, m.key, null, String(!!m.value)); return broadcast(c.room); }
     if (m.t === 'rules') { const en = (m.enabled || []).filter(r => RULE_IDS.includes(r)); if (!en.length) return err(ws, 'Keep at least one option.'); room.rulesEnabled = RULE_IDS.filter(r => en.includes(r)); return broadcast(c.room); }
-    if (m.t === 'shock') {
-      const text = clean(m.text, 240); if (!text) return err(ws, 'Write the news first.');
-      const preset = SHOCK_PRESETS.find(s => s.text === text), effects = preset ? preset.effects : null;
-      if (effects) for (const r in effects) room.mood[r] = Math.round((room.mood[r] || 1) * effects[r] * 1000) / 1000;
-      room.shock = { text, at: now(), effects }; room.shocks.push(room.shock); log(room, 'shock', null, text); return broadcast(c.room);
-    }
-    if (m.t === 'clear_shock') { room.shock = null; return broadcast(c.room); }
-    if (m.t === 'clear_mood') { room.mood = {}; log(room, 'mood_reset'); return broadcast(c.room); }
-    if (m.t === 'rate') { const t = room.teams[m.team]; if (!t) return err(ws, 'Unknown team.'); t.stars = m.stars == null ? null : clamp(Math.round(+m.stars), 0, 3); log(room, 'rated', t.id, String(t.stars)); return broadcast(c.room); }
     if (m.t === 'epilogue') { const id = m.exit == null ? null : +m.exit; room.epilogue = id && room.teams[id] ? { exit: id } : null; return broadcast(c.room); }
     if (m.t === 'decide') { if (!RULE_IDS.includes(m.rule)) return err(ws, 'Unknown option.'); room.decision = { rule: m.rule, at: now() - (room.startedAt || room.createdAt) }; log(room, 'decision', null, m.rule); return broadcast(c.room); }
     if (m.t === 'release_team') { const t = room.teams[m.team]; if (t) { t.clientId = null; clients.forEach(k => { if (k.room === c.room && k.teamId === t.id) k.teamId = null; }); } return broadcast(c.room); }
     if (m.t === 'set_team') {
-      // manual fallback: the instructor records a team's choices
+      // manual fallback: the instructor records a group's position
       const t = room.teams[m.team]; if (!t) return err(ws, 'Unknown team.'); const p = m.patch || {};
-      if (p.rule && RULE_IDS.includes(p.rule)) { const pos = { rule: p.rule, argument: clean(p.argument != null ? p.argument : (t.position && t.position.argument), 200), at: now() - (room.startedAt || room.createdAt), byHost: true }; t.position = pos; if (!t.firstPosition) t.firstPosition = { ...pos }; }
-      if (p.final && RULE_IDS.includes(p.final)) t.final = { rule: p.final, at: now() - (room.startedAt || room.createdAt), byHost: true };
-      if (p.points) { const cs = []; let s = 0; RULE_IDS.forEach(r => { const v = clamp(Math.round(+p.points[r] || 0), 0, MODEL.BUDGET); if (v) { cs.push({ rule: r, pts: v, phase: room.phase, mult: 1, at: now() - (room.startedAt || room.createdAt), byHost: true }); s += v; } }); if (s + (t.study ? MODEL.STUDY_COST : 0) <= MODEL.BUDGET) t.commits = cs; }
-      if (p.pact && RULE_IDS.includes(p.pact.rule) && room.teams[p.pact.with] && +p.pact.with !== t.id) room.proposals.push({ id: uid(4), from: t.id, to: +p.pact.with, rule: p.pact.rule, status: 'accepted', at: now() - (room.startedAt || room.createdAt), byHost: true });
+      if (p.rule && RULE_IDS.includes(p.rule)) t.position = { rule: p.rule, argument: clean(p.argument != null ? p.argument : (t.position && t.position.argument), 200), at: now() - (room.startedAt || room.createdAt), byHost: true };
       log(room, 'host_edit', t.id); return broadcast(c.room);
     }
     if (m.t === 'params') {

@@ -15,27 +15,16 @@ Classroom game for *Business Sustainability Thinking* (Sessions 3–4): five pro
 1. Open `/host`, sign in, **Start a new game**. Open the projector link.
 2. **Joining**: groups scan the QR code and pick their group (one device each). A group whose device drops can rejoin on the same device; if it changes device, click **Release** in the console.
 3. **Briefing** (≈3 min): profiles and the options on the table.
-4. **Take a position** (≈5 min): each group picks an option and writes an argument. Positions stay hidden. Effort committed now counts most.
-5. **Negotiate** (≈8 min): positions become public. Groups offer pacts and commit lobbying effort. Rate arguments as they come in. Optionally tick **Show each group its own numbers** and send **Breaking news**.
+4. **Take a position** (≈5 min): each group picks an option and writes an argument. Positions stay hidden; timing is recorded.
+5. **Negotiate** (≈8 min): positions become public. Groups offer pacts and place 100 lobbying points. Optionally tick **Show each group its own numbers** and send **Breaking news**.
 6. **Final round** (≈4 min): groups confirm their final option.
-7. **Regulator deciding**: the tally helps you; you choose. **Outcome** reveals the charts on the projector (← → to switch), including the scoreboard and, if switched on, the five-years-later epilogue.
+7. **Regulator deciding**: the tally helps you; you choose. **Outcome** reveals four charts on the projector (← → to switch).
 
 If the network fails, use **Edit** on a group's row to enter its choices by hand.
 
-## What is new in v2
-
-The mechanics now reward what the Owls paper describes, without ever saying so:
-
-- **Timing.** Lobbying effort (100 points) is committed in irrevocable tranches. Effort committed while positions are being taken counts ×1.5, during negotiation ×1.0, in the final round ×0.6.
-- **Knowing your numbers.** A group can commission a cost study for 15 of its points and immediately see its own bill under every option. Other groups don't know it has. (You can still show everyone their numbers from the console.)
-- **Arguments count.** You rate each group's argument 0–3★ in the console (×0.85 / ×0.95 / ×1.05 / ×1.15). Groups learn this only at the outcome.
-- **News moves the mood.** Prepared news items shift how receptive the regulator is to some options (e.g. a neighbour adopting individual responsibility: D ×1.2). Your own free text is shown but changes nothing. Reset the mood any time.
-- **Scoreboard.** At the outcome every group gets a 0–100 result (100 = the option best for it among those on the table) and a rank, on its device and on the projector, with how it lobbied.
-- **Epilogue: five years later.** Pick a producer that leaves the market. A new outcome chart shows who ends up paying for its returning products under the chosen rule (orphan waste).
-
 ## Tally (decision aid only)
 
-For each commitment: points × timing × coalition bonus (+25% per pact partner on the same final option) × credibility (×0.8 if the group's final option differs from its first position) × argument rating. Each option's total is then multiplied by the public mood.
+score(option) = Σ groups' points × coalition bonus (+25% per pact partner whose final option is the same) × credibility (×0.8 if the group's final option differs from its first position).
 
 ## Cost model (illustrative, editable in the console)
 

@@ -33,7 +33,7 @@ window.LG = (function () {
     if (s && s.text) { if (el.dataset.at !== String(s.at)) { el.dataset.at = s.at; $('.txt', el).textContent = s.text; el.classList.remove('show'); void el.offsetWidth; el.classList.add('show'); } }
     else el.classList.remove('show');
   }
-  const PHASE_LABEL = { lobby: 'Joining', brief: 'Briefing', position: 'Take a position', negotiate: 'Negotiate', final: 'Final round', decide: 'Regulator deciding', reveal: 'Outcome' };
+  const PHASE_LABEL = { lobby: 'Joining', brief: 'Briefing', position: 'Take a position', decide: 'Regulator deciding', reveal: 'Outcome' };
   const ruleName = (rules, id) => (rules.find(r => r.id === id) || {}).name || id;
   return { store, clientId, connect, $, esc, mmss, toast, shock, PHASE_LABEL, ruleName };
 })();

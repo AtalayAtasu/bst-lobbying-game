@@ -11,7 +11,7 @@
   html, body { height: 100%; overflow: hidden; }
   body { display: grid; place-items: center; }
   #stage { position: absolute; left: 50%; top: 50%; width: 1600px; height: 900px; transform-origin: center; }
-  .ttl { position: absolute; left: 70px; top: 44px; font-size: 52px; font-weight: 750; color: var(--green); }
+  .ttl { position: absolute; left: 70px; right: 260px; top: 44px; font-size: 52px; font-weight: 750; color: var(--green); }
   .sub { position: absolute; left: 72px; top: 112px; font-size: 24px; color: var(--muted); }
   .corner { position: absolute; right: 60px; top: 46px; text-align: right; font-size: 20px; color: var(--muted); }
   .corner b { font-size: 34px; color: var(--green); letter-spacing: .12em; }
@@ -43,16 +43,12 @@
   .col .note { font-size: 16px; padding: 10px 12px; }
   .col .note b { font-family: var(--hand); font-size: 27px; color: var(--green); display: block; line-height: 1; }
   .col .note .arg { font-style: italic; }
-  .col .tally { margin-top: auto; height: 16px; background: var(--mist); border-radius: 4px; overflow: hidden; }
-  .col .tally i { display: block; height: 100%; background: var(--orange); }
   .col .score { font-size: 18px; font-weight: 800; color: #9A4A08; }
   .pending { position: absolute; left: 70px; right: 70px; top: 200px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; }
   .pending .note { min-height: 280px; font-size: 20px; }
   .pending .note b { font-family: var(--hand); font-size: 32px; color: var(--green); display: block; }
   .tick { font-size: 90px; color: var(--leaf); font-family: var(--hand); line-height: 1; }
-  #pacts { position: absolute; inset: 0; pointer-events: none; }
   .deciding { position: absolute; right: 60px; top: 106px; font-family: var(--hand); font-size: 40px; color: var(--orange); font-weight: 700; margin: 0; }
-  .col .note .pact { display: block; margin-top: 6px; font-family: var(--hand); font-size: 22px; font-weight: 700; color: #B85A0B; }
   /* reveal */
   .tabs { position: absolute; right: 60px; bottom: 24px; display: flex; gap: 8px; }
   .tabs button { border: 2px solid var(--rule); background: #fff; border-radius: 16px; padding: 4px 14px; font-weight: 700; color: var(--muted); }
@@ -61,9 +57,6 @@
   .panel.on { display: block; }
   .panel svg { width: 100%; height: 100%; overflow: visible; }
   svg text { font-family: var(--font); }
-  .mood { position: absolute; left: 70px; top: 112px; display: flex; gap: 10px; }
-  .mood span { font-family: var(--hand); font-size: 28px; font-weight: 700; padding: 0 12px; border-radius: 14px; }
-  .mood .up { color: var(--green); background: #E1F1E9; } .mood .down { color: var(--red); background: #FDE3E1; }
 </style>
 </head>
 <body>
@@ -81,14 +74,13 @@
 
   <div class="view" id="v-brief"><div class="groups" id="groups"></div><div class="optlist" id="optlist"></div></div>
   <div class="view" id="v-position"><div class="pending" id="pending"></div></div>
-  <div class="view" id="v-board"><div class="cols" id="cols"></div><svg id="pacts"></svg><p class="deciding" id="deciding" hidden>The regulator is deciding…</p><div class="mood" id="mood"></div></div>
+  <div class="view" id="v-board"><div class="cols" id="cols"></div><p class="deciding" id="deciding" hidden>The regulator is deciding…</p></div>
 
   <div class="view" id="v-reveal">
     <div class="panel" id="p-bill"><svg viewBox="0 0 1600 690" id="svg-bill"></svg></div>
     <div class="panel" id="p-subsidy"><svg viewBox="0 0 1600 690" id="svg-subsidy"></svg></div>
     <div class="panel" id="p-map"><svg viewBox="0 0 1600 690" id="svg-map"></svg></div>
     <div class="panel" id="p-time"><svg viewBox="0 0 1600 690" id="svg-time"></svg></div>
-    <div class="panel" id="p-score"><svg viewBox="0 0 1600 690" id="svg-score"></svg></div>
     <div class="panel" id="p-later"><svg viewBox="0 0 1600 690" id="svg-later"></svg></div>
     <div class="tabs" id="tabs"></div>
   </div>
@@ -116,7 +108,6 @@
   function view(id) { document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + id)); }
 
   function render() {
-    shock(S.shock);
     const P = S.phase;
     $('#corner').innerHTML = `${esc(PHASE_LABEL[P])}<br><b>${S.code}</b>`;
     $('#sub').textContent = '';
@@ -136,49 +127,33 @@
     }
     if (P === 'position') {
       view('position'); $('#ttl').textContent = 'Groups are taking positions';
-      $('#sub').textContent = 'Positions stay hidden until everyone has written theirs.';
+      $('#sub').textContent = 'Positions stay hidden until the round closes.';
       $('#pending').innerHTML = S.params.groups.map((g, i) => { const t = S.teams[g.id]; return `<div class="note" style="background:${NOTE[i]}"><b>Group ${g.id}: ${esc(g.name)}</b>${t.position ? `<div class="tick">✓</div><span class="muted">in at ${mmss(t.position.at)}</span>` : '<span class="muted">thinking…</span>'}</div>`; }).join('');
       return;
     }
-    if (['negotiate', 'final', 'decide'].includes(P)) { view('board'); board(); return; }
+    if (P === 'decide') { view('board'); board(); return; }
     if (P === 'reveal') { view('reveal'); reveal(); }
   }
 
-  /* ----- board: groups placed under the option they stand behind; pacts drawn between them ----- */
+  /* ----- board: groups placed under the option they stand behind ----- */
   function board() {
-    const P = S.phase, R = enabled();
-    $('#ttl').textContent = P === 'negotiate' ? 'Where everyone stands' : P === 'final' ? 'Final round' : 'Final positions';
-    $('#sub').textContent = P === 'negotiate' ? 'Talk, offer pacts, place your lobbying effort.' : P === 'final' ? 'Confirm your final position and points.' : '';
-    $('#deciding').hidden = P !== 'decide';
-    const md = Object.entries(S.mood || {}).filter(([, m]) => m !== 1);
-    $('#mood').innerHTML = md.length ? '<span style="color:var(--muted);padding:0">public mood:</span>' + md.map(([r, m]) => `<span class="${m > 1 ? 'up' : 'down'}">${r} ${m > 1 ? '↑' : '↓'}</span>`).join('') : '';
-    if (md.length) $('#sub').textContent = '';
+    const R = enabled();
+    $('#ttl').textContent = 'Where everyone stands';
+    $('#sub').textContent = '';
+    $('#deciding').hidden = false;
     $('#cols').style.gridTemplateColumns = `repeat(${R.length}, 1fr)`;
-    const at = id => { const t = S.teams[id]; return (P === 'decide' && t.final && t.final.rule) || (t.position && t.position.rule) || null; };
-    const T = S.tally, max = T ? Math.max(1, ...R.map(r => T[r.id].score)) : 1;
-    $('#cols').innerHTML = R.map(r => `<div class="col" data-r="${r.id}"><h3><i>${r.id}</i>${esc(r.short)}</h3>${S.params.groups.filter(g => at(g.id) === r.id).map(g => { const t = S.teams[g.id]; return `<div class="note" data-g="${g.id}" style="background:${NOTE[g.id - 1]}"><b>Group ${g.id}: ${esc(g.name)}</b><span class="arg">${esc(t.position && t.position.argument)}</span>${S.proposals.filter(p => p.status === 'accepted' && (p.from === g.id || p.to === g.id)).map(p => `<span class="pact">pact with ${p.from === g.id ? p.to : p.from} on ${p.rule}</span>`).join('')}</div>`; }).join('')}
-      ${T ? `<span class="score">${T[r.id].score}</span><div class="tally"><i style="width:${T[r.id].score / max * 100}%"></i></div>` : ''}</div>`).join('');
-    // pacts
-    requestAnimationFrame(() => {
-      const svg = $('#pacts'); svg.innerHTML = ''; svg.setAttribute('viewBox', '0 0 1600 900');
-      const rc = rough.svg(svg), stage = $('#stage').getBoundingClientRect(), sc = stage.width / 1600;
-      const box = id => { const el = $(`#cols .note[data-g="${id}"]`); if (!el) return null; const b = el.getBoundingClientRect(); return { x: (b.left - stage.left) / sc + b.width / sc / 2, y: (b.top - stage.top) / sc + b.height / sc / 2 }; };
-      S.proposals.filter(p => p.status === 'accepted').forEach((p, i) => {
-        const a = box(p.from), b = box(p.to); if (!a || !b || Math.abs(a.x - b.x) < 5) return; // same column: shown as chips
-        const mid = [(a.x + b.x) / 2 + (a.x === b.x ? 120 : 0), (a.y + b.y) / 2 - 40];
-        svg.appendChild(rc.curve([[a.x, a.y], mid, [b.x, b.y]], { stroke: C.orange, strokeWidth: 3, roughness: 1.4, strokeLineDash: [10, 8], seed: 3 + i }));
-      });
-    });
+    const at = id => (S.teams[id].position && S.teams[id].position.rule) || null;
+    $('#cols').innerHTML = R.map(r => `<div class="col" data-r="${r.id}"><h3><i>${r.id}</i>${esc(r.short)}</h3>${S.params.groups.filter(g => at(g.id) === r.id).map(g => { const t = S.teams[g.id]; return `<div class="note" data-g="${g.id}" style="background:${NOTE[g.id - 1]}"><b>Group ${g.id}: ${esc(g.name)}</b><span class="arg">${esc(t.position && t.position.argument)}</span></div>`; }).join('')}</div>`).join('');
   }
 
   /* ----- reveal panels ----- */
-  const ALLTABS = [['bill', 'Who pays what'], ['subsidy', 'Whose waste'], ['map', 'Volume and value'], ['time', 'How it unfolded'], ['score', 'Scoreboard'], ['later', 'Five years later']];
+  const ALLTABS = [['bill', 'Who pays what'], ['subsidy', 'Whose waste'], ['map', 'Volume and value'], ['time', 'How it unfolded'], ['later', 'Five years later']];
   let TABS = ALLTABS;
-  const DRAW = { bill: drawBill, subsidy: drawSubsidy, map: drawMap, time: drawTime, score: drawScore, later: drawLater };
+  const DRAW = { bill: drawBill, subsidy: drawSubsidy, map: drawMap, time: drawTime, later: drawLater };
   function reveal() {
     const r = S.decision && S.decision.rule;
     TABS = ALLTABS.filter(t => t[0] !== 'later' || S.epilogue); if (tab >= TABS.length) tab = 0;
-    $('#ttl').textContent = r ? `The regulator chose ${r}: ${LG.ruleName(rules, r)}` : 'Waiting for the decision';
+    $('#ttl').textContent = r ? `The regulator chose ${r}: ${(rules.find(x => x.id === r) || {}).short || r}` : 'Waiting for the decision';
     $('#tabs').innerHTML = TABS.map((t, i) => `<button class="${i === tab ? 'on' : ''}" data-i="${i}">${t[1]}</button>`).join('');
     $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { tab = +b.dataset.i; reveal(); });
     ALLTABS.forEach(t => $('#p-' + t[0]).classList.toggle('on', TABS[tab][0] === t[0]));
@@ -209,7 +184,7 @@
       txt(svg, x + w / 2, Y(v) - 44, MODEL.fmtM(M.cost[r][i]), { size: 18, fill: C.muted });
       svg.appendChild(rc.line(x - 10, Y(bests[i]), x + w + 10, Y(bests[i]), { stroke: C.orange, strokeWidth: 4, seed: 20 + i }));
       txt(svg, x + w / 2, 596, `Group ${g.id}`, { size: 20, w: 700 }); txt(svg, x + w / 2, 622, g.name, { size: 20 });
-      const fr = (S.teams[g.id].final && S.teams[g.id].final.rule) || (S.teams[g.id].position && S.teams[g.id].position.rule);
+      const fr = S.teams[g.id].position && S.teams[g.id].position.rule;
       txt(svg, x + w / 2, 652, fr ? `lobbied for ${fr}` : 'no position', { size: 26, hand: true, fill: fr === r ? C.leaf : C.orange });
     });
     txt(svg, 1500, 40, '— best available option for that group', { a: 'end', size: 28, hand: true, fill: C.orange });
@@ -251,29 +226,6 @@
     txt(svg, 1500, 640, 'Circle size: annual profit', { a: 'end', size: 26, hand: true, fill: C.orange });
   }
 
-  // 5. scoreboard: how close each group came to its best option, and how it lobbied
-  function drawScore(M, r) {
-    const svg = $('#svg-score'); svg.innerHTML = ''; const rc = rough.svg(svg);
-    const G = S.params.groups, sc = MODEL.outcomeScores(M, S.rulesEnabled, r);
-    const order = G.map((g, i) => i).sort((a, b) => sc[b] - sc[a]);
-    const L = 420, W = 760, X = v => L + v / 100 * W;
-    txt(svg, 70, 30, 'Result: 100 = the option best for the group, 0 = the worst for it', { a: 'start', size: 22, w: 700 });
-    [0, 50, 100].forEach(v => { svg.appendChild(rc.line(X(v), 60, X(v), 640, { stroke: '#E3ECE7', strokeWidth: 1, roughness: .3 })); txt(svg, X(v), 664, String(v), { size: 18, fill: C.muted }); });
-    const STAR = ['weak', 'plausible', 'convincing', 'compelling'];
-    order.forEach((i, k) => {
-      const g = G[i], t = S.teams[g.id], y = 80 + k * 112, v = sc[i];
-      txt(svg, 24, y + 52, String(k + 1), { a: 'start', size: 56, hand: true, fill: C.orange });
-      txt(svg, L - 20, y + 34, `Group ${g.id}: ${g.name}`, { a: 'end', size: 22, w: 700 });
-      const fr = (t.final && t.final.rule) || (t.position && t.position.rule);
-      txt(svg, L - 20, y + 62, fr ? `lobbied for ${fr}${fr === r ? ' ✓' : ''}` : 'no position', { a: 'end', size: 26, hand: true, fill: fr === r ? C.leaf : C.orange });
-      svg.appendChild(rc.rectangle(L, y + 10, Math.max(4, X(v) - L), 56, { fill: C.green, fillStyle: 'hachure', hachureGap: 8, stroke: C.ink, strokeWidth: 2, seed: 70 + i }));
-      txt(svg, X(v) + 14, y + 48, String(v), { a: 'start', size: 30, w: 800, fill: C.green });
-      const cs = t.commits || [], early = cs.filter(c => c.phase === 'position').reduce((a, c) => a + c.pts, 0), tot = cs.reduce((a, c) => a + c.pts, 0);
-      const note = [tot ? `${tot} pts committed${early ? `, ${early} early` : ''}` : 'no effort committed', t.study ? 'cost study' : null, t.stars != null ? `argument: ${STAR[t.stars]}` : null].filter(Boolean).join(' · ');
-      txt(svg, L, y + 92, note, { a: 'start', size: 17, fill: C.muted });
-    });
-  }
-
   // 6. five years later: a producer has left, its products keep coming back
   function drawLater(M, r) {
     const svg = $('#svg-later'); svg.innerHTML = ''; const rc = rough.svg(svg);
@@ -302,24 +254,20 @@
     txt(svg, 1500, 110, 'grey: today · red: five years later (€ million a year)', { a: 'end', size: 20, fill: C.muted });
   }
 
-  // 4. timeline of positions, pacts, news and the decision
+  // 4. timeline of positions, changes of position and the decision
   function drawTime(M, r) {
     const svg = $('#svg-time'); svg.innerHTML = ''; const rc = rough.svg(svg);
-    const L0 = S.log || [], evs = L0.filter(e => ['position', 'pact', 'final', 'shock', 'decision', 'phase', 'commit', 'study'].includes(e.type));
+    const L0 = S.log || [], evs = L0.filter(e => ['position', 'revise', 'decision', 'phase'].includes(e.type));
     const tmax = Math.max(60000, ...evs.map(e => e.at)), L = 330, Rr = 1520, X = t => L + t / tmax * (Rr - L);
     const lane = id => 60 + (id - 1) * 95;
     S.params.groups.forEach(g => { txt(svg, L - 20, lane(g.id) + 7, `Group ${g.id}: ${g.name}`, { a: 'end', size: 18, w: 700 }); svg.appendChild(rc.line(L, lane(g.id), Rr, lane(g.id), { stroke: '#DCE6E1', strokeWidth: 1.4, roughness: .4 })); });
     svg.appendChild(rc.line(L, 560, Rr, 560, { stroke: C.ink, strokeWidth: 2 }));
     evs.filter(e => e.type === 'phase').forEach(e => { svg.appendChild(rc.line(X(e.at), 30, X(e.at), 560, { stroke: C.grey, strokeWidth: 1.2, strokeLineDash: [6, 8], roughness: .3 })); txt(svg, X(e.at) + 6, 586, PHASE_LABEL[e.detail] || e.detail, { a: 'start', size: 16, fill: C.muted }); });
     evs.forEach(e => {
-      if (e.type === 'position' || e.type === 'final') { const y = lane(e.team); svg.appendChild(rc.circle(X(e.at), y, e.type === 'final' ? 34 : 26, { fill: e.type === 'final' ? C.green : '#fff', fillStyle: 'solid', stroke: C.green, strokeWidth: 2, seed: Math.round(e.at) % 97 })); txt(svg, X(e.at), y + 6, e.detail, { size: 16, w: 800, fill: e.type === 'final' ? '#fff' : C.green }); }
-      if (e.type === 'pact') { const [other, rule] = (e.detail || '').split(':'); svg.appendChild(rc.line(X(e.at), lane(e.team), X(e.at), lane(+other), { stroke: C.orange, strokeWidth: 3, seed: 7 })); txt(svg, X(e.at) + 8, (lane(e.team) + lane(+other)) / 2, `pact ${rule}`, { a: 'start', size: 24, hand: true, fill: C.orange }); }
-      if (e.type === 'commit') { const pts = parseInt(e.detail, 10) || 0; svg.appendChild(rc.rectangle(X(e.at) - 4, lane(e.team) - 30 - pts / 4, 8, pts / 4, { fill: C.orange, fillStyle: 'solid', stroke: C.orange, roughness: .4, seed: 11 })); }
-      if (e.type === 'study') { txt(svg, X(e.at), lane(e.team) - 20, '🔍', { size: 22 }); }
-      if (e.type === 'shock') { svg.appendChild(rc.line(X(e.at), 20, X(e.at), 560, { stroke: C.red, strokeWidth: 2.5, seed: 9 })); txt(svg, X(e.at) + 6, 20, 'news', { a: 'start', size: 24, hand: true, fill: C.red }); }
+      if (e.type === 'position' || e.type === 'revise') { const y = lane(e.team), first = e.type === 'position'; svg.appendChild(rc.circle(X(e.at), y, 30, { fill: first ? C.green : '#fff', fillStyle: 'solid', stroke: C.green, strokeWidth: 2, seed: Math.round(e.at) % 97 })); txt(svg, X(e.at), y + 6, e.detail, { size: 16, w: 800, fill: first ? '#fff' : C.green }); }
       if (e.type === 'decision') { txt(svg, X(e.at), 620, `decision: ${e.detail}`, { size: 28, hand: true, fill: C.green }); }
     });
-    txt(svg, Rr, 650, '○ position   ● final position   ▮ effort committed   minutes since start', { a: 'end', size: 18, fill: C.muted });
+    txt(svg, Rr, 650, '● first position   ○ changed position   minutes since start', { a: 'end', size: 18, fill: C.muted });
   }
 })();
 </script>
